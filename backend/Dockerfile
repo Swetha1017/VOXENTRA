@@ -5,7 +5,7 @@ WORKDIR /app
 
 # Pre-copy go.mod and go.sum for layer caching
 COPY go.mod go.sum ./
-RUN go mod download
+RUN go mod download -x
 
 # Copy source code
 COPY . .
