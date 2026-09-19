@@ -1,6 +1,8 @@
 # Build stage
 FROM golang:1.22-alpine AS builder
 
+ENV GOTOOLCHAIN=auto
+
 WORKDIR /app
 
 # Pre-copy go.mod and go.sum for layer caching
@@ -11,7 +13,7 @@ RUN go mod download -x
 COPY . .
 
 # Build statically linked binary
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o server ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o server .
 
 # Final stage
 FROM alpine:3.19
