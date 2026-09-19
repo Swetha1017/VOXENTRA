@@ -25,6 +25,122 @@ export const AdminPortal = ({ navigate }) => {
   const [actionLoading, setActionLoading] = useState(false);
 
   // ==========================================
+  // DURATION CONFIGURATION (25 min to 2 hrs / 120 min)
+  // ==========================================
+  const formatDuration = (mins) => {
+    const m = Number(mins);
+    if (isNaN(m) || m < 25) return `${m || 0}m (Min 25m)`;
+    if (m === 60) return "1 hour";
+    if (m === 120) return "2 hours (Max)";
+    if (m > 60) {
+      const hours = Math.floor(m / 60);
+      const remaining = m % 60;
+      return remaining > 0 ? `${hours}h ${remaining}m` : `${hours} hour${hours > 1 ? "s" : ""}`;
+    }
+    return `${m} mins`;
+  };
+
+  const DURATION_PRESETS = [
+    { value: 25, label: "25m (Min)" },
+    { value: 30, label: "30m" },
+    { value: 45, label: "45m" },
+    { value: 60, label: "1h (60m)" },
+    { value: 90, label: "1.5h (90m)" },
+    { value: 120, label: "2h (Max)" },
+  ];
+
+  // ==========================================
+  // QUICK CREATE POLL MODAL STATE
+  // ==========================================
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [quickCreateForm, setQuickCreateForm] = useState({
+    title: "",
+    category: "Artificial Intelligence",
+    description: "",
+    duration: 60,
+    options: ["", "", ""],
+  });
+  const [quickCreateError, setQuickCreateError] = useState("");
+  const [quickCreateLoading, setQuickCreateLoading] = useState(false);
+
+  const handleQuickOptionChange = (idx, val) => {
+    const updated = [...quickCreateForm.options];
+    updated[idx] = val;
+    setQuickCreateForm((prev) => ({ ...prev, options: updated }));
+  };
+
+  const addQuickOptionField = () => {
+    if (quickCreateForm.options.length < 8) {
+      setQuickCreateForm((prev) => ({ ...prev, options: [...prev.options, ""] }));
+    }
+  };
+
+  const removeQuickOptionField = (idx) => {
+    if (quickCreateForm.options.length > 2) {
+      setQuickCreateForm((prev) => ({
+        ...prev,
+        options: prev.options.filter((_, i) => i !== idx),
+      }));
+    }
+  };
+
+  const handleQuickCreateSubmit = async (e) => {
+    e.preventDefault();
+    setQuickCreateError("");
+
+    if (!quickCreateForm.title.trim() || quickCreateForm.title.trim().length < 3) {
+      setQuickCreateError("Pool title / question must be at least 3 characters long");
+      return;
+    }
+
+    const cleanOpts = quickCreateForm.options.map((o) => o.trim()).filter(Boolean);
+    if (cleanOpts.length < 2) {
+      setQuickCreateError("Please provide at least 2 non-empty options");
+      return;
+    }
+
+    const unique = new Set(cleanOpts.map((o) => o.toLowerCase()));
+    if (unique.size !== cleanOpts.length) {
+      setQuickCreateError("Options must be unique (no duplicates)");
+      return;
+    }
+
+    const dur = Number(quickCreateForm.duration);
+    if (dur < 25 || dur > 120) {
+      setQuickCreateError("Poll duration must be between 25 minutes and 2 hours (120 minutes)");
+      return;
+    }
+
+    setQuickCreateLoading(true);
+    try {
+      await api.post("/api/admin/polls", {
+        title: quickCreateForm.title.trim(),
+        description: quickCreateForm.description.trim(),
+        category: quickCreateForm.category,
+        duration_minutes: dur,
+        options: cleanOpts,
+        entry_requirement: "Free / Open to All",
+        reward_structure: "Winner Takes All XP",
+      });
+
+      showToast("Voting pool successfully created and published live!");
+      setShowCreateModal(false);
+      setQuickCreateForm({
+        title: "",
+        category: "Artificial Intelligence",
+        description: "",
+        duration: 60,
+        options: ["", "", ""],
+      });
+      loadAdminData();
+    } catch (err) {
+      setQuickCreateError(err.message || "Failed to create pool");
+    } finally {
+      setQuickCreateLoading(false);
+    }
+  };
+
+  // ==========================================
   // CREATE POOL WIZARD STATE
   // ==========================================
   const [wizardStep, setWizardStep] = useState(1); // 1: Basics, 2: Params, 3: Options, 4: Preview
@@ -34,7 +150,7 @@ export const AdminPortal = ({ navigate }) => {
   const [poolEntryReq, setPoolEntryReq] = useState("Free / Open to All");
   const [poolMinParticipants, setPoolMinParticipants] = useState(5);
   const [poolMaxParticipants, setPoolMaxParticipants] = useState(250);
-  const [poolDuration, setPoolDuration] = useState(120); // minutes
+  const [poolDuration, setPoolDuration] = useState(60); // minutes (25 min to 120 min)
   const [poolAutoClose, setPoolAutoClose] = useState(true);
   const [poolReward, setPoolReward] = useState("Winner Takes All XP");
   const [poolOptions, setPoolOptions] = useState(["", "", ""]);
@@ -49,7 +165,7 @@ export const AdminPortal = ({ navigate }) => {
     title: "",
     category: "Artificial Intelligence",
     description: "",
-    duration: 120,
+    duration: 60,
     isActive: true,
     options: ["", ""],
   });
@@ -62,11 +178,17 @@ export const AdminPortal = ({ navigate }) => {
     const opts = poll.options && poll.options.length >= 2
       ? poll.options.map((o) => (typeof o === "string" ? o : o.text))
       : ["", ""];
+    
+    // Ensure duration is clamped between 25 and 120 min
+    const validDuration = poll.duration_minutes && poll.duration_minutes >= 25 && poll.duration_minutes <= 120
+      ? poll.duration_minutes
+      : 60;
+
     setEditForm({
       title: poll.title || "",
       category: poll.category || "Artificial Intelligence",
       description: poll.description || "",
-      duration: poll.duration_minutes || 60,
+      duration: validDuration,
       isActive: poll.is_active !== undefined ? poll.is_active : true,
       options: opts,
     });
@@ -114,8 +236,9 @@ export const AdminPortal = ({ navigate }) => {
       return;
     }
 
-    if (Number(editForm.duration) <= 0) {
-      setEditError("Duration must be greater than 0 minutes");
+    const editDuration = Number(editForm.duration);
+    if (isNaN(editDuration) || editDuration < 25 || editDuration > 120) {
+      setEditError("Poll duration must be between 25 minutes and 2 hours (120 minutes)");
       return;
     }
 
@@ -125,7 +248,7 @@ export const AdminPortal = ({ navigate }) => {
         title: editForm.title.trim(),
         description: editForm.description.trim(),
         category: editForm.category,
-        duration_minutes: Number(editForm.duration),
+        duration_minutes: editDuration,
         is_active: editForm.isActive,
         options: cleanOpts,
       });
@@ -268,8 +391,8 @@ export const AdminPortal = ({ navigate }) => {
         setWizardError("Maximum participants cannot be less than minimum participants");
         return false;
       }
-      if (poolDuration <= 0) {
-        setWizardError("Duration must be greater than 0 minutes");
+      if (poolDuration < 25 || poolDuration > 120) {
+        setWizardError("Poll duration must be between 25 minutes and 2 hours (120 minutes)");
         return false;
       }
     } else if (step === 3) {
@@ -612,7 +735,7 @@ export const AdminPortal = ({ navigate }) => {
                 <RefreshCw size={14} className={loading ? "spin" : ""} /> Refresh
               </button>
               <button
-                onClick={() => { setActiveTab("create_pool"); setWizardStep(1); }}
+                onClick={() => setShowCreateModal(true)}
                 className="btn-vox-primary"
                 style={{
                   padding: "8px 18px",
@@ -932,38 +1055,59 @@ export const AdminPortal = ({ navigate }) => {
               </div>
 
               <div>
-                <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)", marginBottom: "6px" }}>
-                  Voting Duration (Minutes)
-                </label>
-                <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", flexWrap: "wrap", gap: "6px" }}>
+                  <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)" }}>
+                    Voting Duration: <span style={{ color: "#22d3ee", fontWeight: 800 }}>{formatDuration(poolDuration)}</span> ({poolDuration} mins)
+                  </label>
+                  <span style={{ fontSize: "0.74rem", color: "#22d3ee", background: "rgba(6, 182, 212, 0.12)", padding: "2px 8px", borderRadius: "6px", border: "1px solid rgba(6, 182, 212, 0.3)" }}>
+                    Allowed: 25 min – 2 hrs (120m)
+                  </span>
+                </div>
+
+                {/* Range Slider and Number Input */}
+                <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "10px" }}>
                   <input
-                    type="number"
-                    min="1"
+                    type="range"
+                    min="25"
+                    max="120"
+                    step="5"
                     value={poolDuration}
                     onChange={(e) => setPoolDuration(Number(e.target.value))}
-                    className="vox-input"
-                    style={{ width: "140px" }}
+                    style={{ flex: 1, accentColor: "#06b6d4", cursor: "pointer" }}
                   />
-                  <div style={{ display: "flex", gap: "6px" }}>
-                    {[30, 60, 120, 1440].map((mins) => (
-                      <button
-                        key={mins}
-                        type="button"
-                        onClick={() => setPoolDuration(mins)}
-                        style={{
-                          background: poolDuration === mins ? "rgba(139, 92, 246, 0.3)" : "rgba(255,255,255,0.04)",
-                          border: poolDuration === mins ? "1px solid #8b5cf6" : "1px solid var(--border-subtle)",
-                          color: "#fff",
-                          padding: "6px 12px",
-                          borderRadius: "8px",
-                          fontSize: "0.75rem",
-                          cursor: "pointer",
-                        }}
-                      >
-                        {mins < 60 ? `${mins}m` : mins === 1440 ? "24h" : `${mins / 60}h`}
-                      </button>
-                    ))}
-                  </div>
+                  <input
+                    type="number"
+                    min="25"
+                    max="120"
+                    value={poolDuration}
+                    onChange={(e) => setPoolDuration(Math.max(25, Math.min(120, Number(e.target.value))))}
+                    className="vox-input"
+                    style={{ width: "90px", textAlign: "center", padding: "8px" }}
+                  />
+                  <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>min</span>
+                </div>
+
+                {/* Quick Presets */}
+                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                  {DURATION_PRESETS.map((p) => (
+                    <button
+                      key={p.value}
+                      type="button"
+                      onClick={() => setPoolDuration(p.value)}
+                      style={{
+                        background: poolDuration === p.value ? "rgba(6, 182, 212, 0.3)" : "rgba(255,255,255,0.04)",
+                        border: poolDuration === p.value ? "1px solid #06b6d4" : "1px solid var(--border-subtle)",
+                        color: poolDuration === p.value ? "#22d3ee" : "#fff",
+                        padding: "6px 12px",
+                        borderRadius: "8px",
+                        fontSize: "0.75rem",
+                        fontWeight: poolDuration === p.value ? 700 : 500,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
                 </div>
               </div>
 
@@ -1421,40 +1565,61 @@ export const AdminPortal = ({ navigate }) => {
                 />
               </div>
 
-              {/* Duration */}
+              {/* Duration: strictly between 25 min and 120 min (2 hrs) */}
               <div>
-                <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)", marginBottom: "6px" }}>
-                  Session Duration (Minutes)
-                </label>
-                <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", flexWrap: "wrap", gap: "6px" }}>
+                  <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)" }}>
+                    Session Duration: <span style={{ color: "#38bdf8", fontWeight: 800 }}>{formatDuration(editForm.duration)}</span> ({editForm.duration} mins)
+                  </label>
+                  <span style={{ fontSize: "0.74rem", color: "#38bdf8", background: "rgba(56, 189, 248, 0.12)", padding: "2px 8px", borderRadius: "6px", border: "1px solid rgba(56, 189, 248, 0.3)" }}>
+                    Allowed: 25 min – 2 hrs (120m)
+                  </span>
+                </div>
+
+                {/* Range Slider & Number Input */}
+                <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "10px" }}>
                   <input
-                    type="number"
-                    min="1"
+                    type="range"
+                    min="25"
+                    max="120"
+                    step="5"
                     value={editForm.duration}
                     onChange={(e) => setEditForm({ ...editForm, duration: Number(e.target.value) })}
-                    className="vox-input"
-                    style={{ width: "130px" }}
+                    style={{ flex: 1, accentColor: "#38bdf8", cursor: "pointer" }}
                   />
-                  <div style={{ display: "flex", gap: "6px" }}>
-                    {[30, 60, 120, 1440].map((mins) => (
-                      <button
-                        key={mins}
-                        type="button"
-                        onClick={() => setEditForm({ ...editForm, duration: mins })}
-                        style={{
-                          background: editForm.duration === mins ? "rgba(56, 189, 248, 0.25)" : "rgba(255,255,255,0.04)",
-                          border: editForm.duration === mins ? "1px solid #38bdf8" : "1px solid var(--border-subtle)",
-                          color: editForm.duration === mins ? "#38bdf8" : "#fff",
-                          padding: "6px 12px",
-                          borderRadius: "8px",
-                          fontSize: "0.75rem",
-                          cursor: "pointer",
-                        }}
-                      >
-                        {mins < 60 ? `${mins}m` : mins === 1440 ? "24h" : `${mins / 60}h`}
-                      </button>
-                    ))}
-                  </div>
+                  <input
+                    type="number"
+                    min="25"
+                    max="120"
+                    value={editForm.duration}
+                    onChange={(e) => setEditForm({ ...editForm, duration: Math.max(25, Math.min(120, Number(e.target.value))) })}
+                    className="vox-input"
+                    style={{ width: "90px", textAlign: "center", padding: "8px" }}
+                  />
+                  <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>min</span>
+                </div>
+
+                {/* Quick Presets */}
+                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                  {DURATION_PRESETS.map((p) => (
+                    <button
+                      key={p.value}
+                      type="button"
+                      onClick={() => setEditForm({ ...editForm, duration: p.value })}
+                      style={{
+                        background: editForm.duration === p.value ? "rgba(56, 189, 248, 0.25)" : "rgba(255,255,255,0.04)",
+                        border: editForm.duration === p.value ? "1px solid #38bdf8" : "1px solid var(--border-subtle)",
+                        color: editForm.duration === p.value ? "#38bdf8" : "#fff",
+                        padding: "6px 12px",
+                        borderRadius: "8px",
+                        fontSize: "0.75rem",
+                        fontWeight: editForm.duration === p.value ? 700 : 500,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
                 </div>
               </div>
 
@@ -1536,6 +1701,289 @@ export const AdminPortal = ({ navigate }) => {
                 >
                   {editLoading ? <RefreshCw size={16} className="spin" /> : <Check size={16} />}
                   {editLoading ? "Saving Changes..." : "Save Changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* QUICK CREATE POOL MODAL */}
+      {/* ======================================================== */}
+      {showCreateModal && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0, 0, 0, 0.8)",
+          backdropFilter: "blur(8px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000,
+          padding: "20px",
+        }}>
+          <div className="glass-panel" style={{
+            maxWidth: "620px",
+            width: "100%",
+            maxHeight: "92vh",
+            overflowY: "auto",
+            padding: "32px",
+            border: "1px solid rgba(6, 182, 212, 0.35)",
+            boxShadow: "0 0 40px rgba(6, 182, 212, 0.2)",
+            position: "relative",
+          }}>
+            {/* Modal Header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <div style={{
+                  width: "36px",
+                  height: "36px",
+                  borderRadius: "10px",
+                  background: "linear-gradient(135deg, #06b6d4 0%, #8b5cf6 100%)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}>
+                  <Plus size={20} color="#ffffff" />
+                </div>
+                <div>
+                  <h2 style={{ fontSize: "1.25rem", fontWeight: 800, color: "#ffffff", margin: 0 }}>
+                    Create Live Voting Pool
+                  </h2>
+                  <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", margin: "2px 0 0 0" }}>
+                    Configure and launch a live voting session with duration control (25m – 2h)
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(false)}
+                style={{
+                  background: "rgba(255, 255, 255, 0.05)",
+                  border: "1px solid var(--border-subtle)",
+                  color: "var(--text-muted)",
+                  borderRadius: "8px",
+                  padding: "6px",
+                  cursor: "pointer",
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {quickCreateError && (
+              <div style={{
+                background: "rgba(239, 68, 68, 0.15)",
+                border: "1px solid rgba(239, 68, 68, 0.35)",
+                color: "#fca5a5",
+                padding: "10px 14px",
+                borderRadius: "10px",
+                fontSize: "0.85rem",
+                marginBottom: "20px",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+              }}>
+                <AlertTriangle size={16} /> {quickCreateError}
+              </div>
+            )}
+
+            <form onSubmit={handleQuickCreateSubmit} style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
+              {/* Question / Title */}
+              <div>
+                <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)", marginBottom: "6px" }}>
+                  Pool Name / Voting Question *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={quickCreateForm.title}
+                  onChange={(e) => setQuickCreateForm({ ...quickCreateForm, title: e.target.value })}
+                  placeholder="e.g. Which programming language will dominate AI in 2027?"
+                  className="vox-input"
+                />
+              </div>
+
+              {/* Category */}
+              <div>
+                <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)", marginBottom: "6px" }}>
+                  Category
+                </label>
+                <select
+                  value={quickCreateForm.category}
+                  onChange={(e) => setQuickCreateForm({ ...quickCreateForm, category: e.target.value })}
+                  className="vox-input"
+                  style={{ background: "#0b0e20" }}
+                >
+                  <option value="Artificial Intelligence">Artificial Intelligence</option>
+                  <option value="Web Development">Web Development</option>
+                  <option value="Gaming & Esports">Gaming & Esports</option>
+                  <option value="Cloud Computing">Cloud Computing</option>
+                  <option value="Blockchain & Web3">Blockchain & Web3</option>
+                  <option value="Mobile Tech">Mobile Tech</option>
+                  <option value="General">General</option>
+                </select>
+              </div>
+
+              {/* Description */}
+              <div>
+                <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)", marginBottom: "6px" }}>
+                  Description / Context (Optional)
+                </label>
+                <textarea
+                  value={quickCreateForm.description}
+                  onChange={(e) => setQuickCreateForm({ ...quickCreateForm, description: e.target.value })}
+                  placeholder="Provide background context, criteria, or rules for voters..."
+                  className="vox-input"
+                  rows={2}
+                />
+              </div>
+
+              {/* Session Duration: 25 min to 2 hrs / 120 min */}
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", flexWrap: "wrap", gap: "6px" }}>
+                  <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)" }}>
+                    Session Duration: <span style={{ color: "#22d3ee", fontWeight: 800 }}>{formatDuration(quickCreateForm.duration)}</span> ({quickCreateForm.duration} mins)
+                  </label>
+                  <span style={{ fontSize: "0.74rem", color: "#22d3ee", background: "rgba(6, 182, 212, 0.12)", padding: "2px 8px", borderRadius: "6px", border: "1px solid rgba(6, 182, 212, 0.3)" }}>
+                    Allowed: 25 min – 2 hrs (120m)
+                  </span>
+                </div>
+
+                {/* Range Slider and Number Input */}
+                <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "10px" }}>
+                  <input
+                    type="range"
+                    min="25"
+                    max="120"
+                    step="5"
+                    value={quickCreateForm.duration}
+                    onChange={(e) => setQuickCreateForm({ ...quickCreateForm, duration: Number(e.target.value) })}
+                    style={{ flex: 1, accentColor: "#06b6d4", cursor: "pointer" }}
+                  />
+                  <input
+                    type="number"
+                    min="25"
+                    max="120"
+                    value={quickCreateForm.duration}
+                    onChange={(e) => setQuickCreateForm({ ...quickCreateForm, duration: Math.max(25, Math.min(120, Number(e.target.value))) })}
+                    className="vox-input"
+                    style={{ width: "90px", textAlign: "center", padding: "8px" }}
+                  />
+                  <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>min</span>
+                </div>
+
+                {/* Quick Presets */}
+                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                  {DURATION_PRESETS.map((p) => (
+                    <button
+                      key={p.value}
+                      type="button"
+                      onClick={() => setQuickCreateForm({ ...quickCreateForm, duration: p.value })}
+                      style={{
+                        background: quickCreateForm.duration === p.value ? "rgba(6, 182, 212, 0.3)" : "rgba(255,255,255,0.04)",
+                        border: quickCreateForm.duration === p.value ? "1px solid #06b6d4" : "1px solid var(--border-subtle)",
+                        color: quickCreateForm.duration === p.value ? "#22d3ee" : "#fff",
+                        padding: "6px 12px",
+                        borderRadius: "8px",
+                        fontSize: "0.75rem",
+                        fontWeight: quickCreateForm.duration === p.value ? 700 : 500,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Voting Options */}
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                  <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)" }}>
+                    Voting Options (Min 2, Max 8) *
+                  </label>
+                  <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                    {quickCreateForm.options.length} options
+                  </span>
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                  {quickCreateForm.options.map((opt, i) => (
+                    <div key={i} style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                      <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text-dim)", width: "22px" }}>
+                        #{i + 1}
+                      </span>
+                      <input
+                        type="text"
+                        value={opt}
+                        onChange={(e) => handleQuickOptionChange(i, e.target.value)}
+                        placeholder={`Option ${i + 1}`}
+                        className="vox-input"
+                        style={{ flex: 1 }}
+                      />
+                      {quickCreateForm.options.length > 2 && (
+                        <button
+                          type="button"
+                          onClick={() => removeQuickOptionField(i)}
+                          style={{
+                            background: "rgba(239, 68, 68, 0.1)",
+                            border: "1px solid rgba(239, 68, 68, 0.3)",
+                            color: "#f87171",
+                            borderRadius: "8px",
+                            padding: "0 12px",
+                            height: "42px",
+                            cursor: "pointer",
+                          }}
+                          title="Remove option"
+                        >
+                          <X size={16} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {quickCreateForm.options.length < 8 && (
+                  <button
+                    type="button"
+                    onClick={addQuickOptionField}
+                    className="btn-vox-secondary"
+                    style={{ marginTop: "12px", padding: "8px 16px", fontSize: "0.82rem", display: "flex", alignItems: "center", gap: "6px" }}
+                  >
+                    <Plus size={14} /> Add Option
+                  </button>
+                )}
+              </div>
+
+              {/* Modal Action Buttons */}
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "16px", borderTop: "1px solid var(--border-subtle)", paddingTop: "20px" }}>
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  className="btn-vox-secondary"
+                  style={{ padding: "10px 20px" }}
+                  disabled={quickCreateLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-vox-primary"
+                  style={{
+                    padding: "10px 24px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    background: "linear-gradient(135deg, #06b6d4 0%, #8b5cf6 100%)",
+                    boxShadow: "0 0 20px rgba(6, 182, 212, 0.4)",
+                  }}
+                  disabled={quickCreateLoading}
+                >
+                  {quickCreateLoading ? <RefreshCw size={16} className="spin" /> : <Sparkles size={16} />}
+                  {quickCreateLoading ? "Creating Pool..." : "Launch Pool Live"}
                 </button>
               </div>
             </form>

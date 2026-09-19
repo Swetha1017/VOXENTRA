@@ -233,6 +233,15 @@ func (p *PollController) AdminCreatePoll(c *gin.Context) {
 		rewardStruct = "Winner Takes All XP"
 	}
 
+	duration := req.DurationMinutes
+	if duration != 0 && (duration < 25 || duration > 120) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Poll duration must be between 25 minutes and 2 hours (120 minutes)"})
+		return
+	}
+	if duration == 0 {
+		duration = 60
+	}
+
 	poll := models.Poll{
 		CreatorID:        creatorID,
 		CreatorName:      username.(string),
@@ -240,7 +249,7 @@ func (p *PollController) AdminCreatePoll(c *gin.Context) {
 		Description:      strings.TrimSpace(req.Description),
 		Category:         category,
 		Options:          options,
-		DurationMinutes:  req.DurationMinutes,
+		DurationMinutes:  duration,
 		MinParticipants:  minP,
 		MaxParticipants:  maxP,
 		EntryRequirement: entryReq,
@@ -283,6 +292,10 @@ func (p *PollController) AdminUpdatePoll(c *gin.Context) {
 		existing.Category = req.Category
 	}
 	if req.DurationMinutes > 0 {
+		if req.DurationMinutes < 25 || req.DurationMinutes > 120 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Poll duration must be between 25 minutes and 2 hours (120 minutes)"})
+			return
+		}
 		existing.DurationMinutes = req.DurationMinutes
 	}
 	if req.IsActive != nil {

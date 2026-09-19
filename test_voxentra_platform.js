@@ -237,13 +237,42 @@ async function runSuite() {
   });
   assertCheck('Social Referral Click Recorded', res.status === 200 && (res.data.status === 'tracked' || res.data.status === 'ok'), 'Referral logged for platform: whatsapp');
 
-  // 12. Admin Poll Lifecycle Management
-  console.log('\n--- 12. Admin Poll Lifecycle Management ---');
+  // 12. Admin Poll Lifecycle Management & Duration Constraints (25m - 2h / 120m)
+  console.log('\n--- 12. Admin Poll Lifecycle Management & Duration Constraints ---');
+
+  // Test duration < 25 min rejected
+  let invalidPoll = {
+    title: `Invalid Short Poll ${timestamp}`,
+    category: 'Engineering',
+    duration_minutes: 15, // < 25 min
+    options: ['Opt A', 'Opt B']
+  };
+  res = await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: '/api/admin/polls',
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` }
+  }, invalidPoll);
+  assertCheck('Reject Poll Duration < 25 min (400)', res.status === 400, res.data.error);
+
+  // Test duration > 120 min rejected
+  invalidPoll.duration_minutes = 150; // > 120 min (2h)
+  res = await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: '/api/admin/polls',
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` }
+  }, invalidPoll);
+  assertCheck('Reject Poll Duration > 2 Hours (400)', res.status === 400, res.data.error);
+
+  // Valid poll creation with minimum allowed duration (25 min)
   const newPoll = {
     title: `Test Poll ${timestamp}`,
     description: 'Automated lifecycle test poll',
     category: 'Engineering',
-    duration_minutes: 60,
+    duration_minutes: 25,
     options: ['Option Alpha', 'Option Beta', 'Option Gamma']
   };
   res = await request({
@@ -257,9 +286,37 @@ async function runSuite() {
     }
   }, newPoll);
   const createdPollId = res.data.id || res.data.poll?.id;
-  assertCheck('Admin Poll Creation', res.status === 201 && createdPollId, `Created poll ID: ${createdPollId}`);
+  assertCheck('Admin Poll Creation with 25m Min Duration', res.status === 201 && createdPollId, `Created poll ID: ${createdPollId}`);
 
-  // Edit poll
+  // Test edit poll duration rejected if < 25 min
+  res = await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: `/api/admin/polls/${createdPollId}`,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` }
+  }, {
+    title: `Invalid Duration Edit ${timestamp}`,
+    duration_minutes: 10,
+    options: ['A', 'B']
+  });
+  assertCheck('Reject Edit Duration < 25 min (400)', res.status === 400, res.data.error);
+
+  // Test edit poll duration rejected if > 120 min
+  res = await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: `/api/admin/polls/${createdPollId}`,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` }
+  }, {
+    title: `Invalid Duration Edit ${timestamp}`,
+    duration_minutes: 200,
+    options: ['A', 'B']
+  });
+  assertCheck('Reject Edit Duration > 2 Hours (400)', res.status === 400, res.data.error);
+
+  // Edit poll with maximum allowed duration (120 min = 2 hrs)
   res = await request({
     hostname: 'localhost',
     port: 8080,
@@ -271,12 +328,12 @@ async function runSuite() {
     }
   }, {
     title: `Updated Poll Title ${timestamp}`,
-    description: 'Updated description by admin test',
+    description: 'Updated description by admin test with 2 hour duration',
     category: 'Cloud Computing',
-    duration_minutes: 90,
+    duration_minutes: 120,
     options: ['Updated Alpha', 'Updated Beta', 'New Gamma Option']
   });
-  assertCheck('Admin Edit Poll', res.status === 200 && res.data.title?.includes('Updated Poll Title'), `Updated title: "${res.data.title}"`);
+  assertCheck('Admin Edit Poll with 2 Hour Max Duration', res.status === 200 && res.data.title?.includes('Updated Poll Title'), `Updated duration: ${res.data.duration_minutes}m (2 hours)`);
 
   // Pause poll
   res = await request({

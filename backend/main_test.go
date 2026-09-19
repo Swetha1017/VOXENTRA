@@ -323,12 +323,39 @@ func TestPoolCreationAndLifecycle(t *testing.T) {
 		Description:      "Vote for the best game mechanic of the year",
 		Category:         "Gaming",
 		Options:          []string{"Real-time Physics", "Procedural Generation", "Neural AI NPC"},
-		DurationMinutes:  180,
+		DurationMinutes:  90,
 		MinParticipants:  10,
 		MaxParticipants:  500,
 		EntryRequirement: "Verified Voter",
 		RewardStructure:  "Winner Takes All XP",
 	}
+
+	// 1a. Verify validation: duration < 25 minutes is rejected
+	invalidLowPayload := poolPayload
+	invalidLowPayload.DurationMinutes = 20
+	lowBody, _ := json.Marshal(invalidLowPayload)
+	wLow := httptest.NewRecorder()
+	reqLow, _ := http.NewRequest("POST", "/api/admin/polls", bytes.NewBuffer(lowBody))
+	reqLow.Header.Set("Content-Type", "application/json")
+	reqLow.Header.Set("Authorization", "Bearer "+authResp.Token)
+	router.ServeHTTP(wLow, reqLow)
+	if wLow.Code != http.StatusBadRequest {
+		t.Fatalf("Expected 400 Bad Request for duration < 25, got %d: %s", wLow.Code, wLow.Body.String())
+	}
+
+	// 1b. Verify validation: duration > 120 minutes (2 hrs) is rejected
+	invalidHighPayload := poolPayload
+	invalidHighPayload.DurationMinutes = 180
+	highBody, _ := json.Marshal(invalidHighPayload)
+	wHigh := httptest.NewRecorder()
+	reqHigh, _ := http.NewRequest("POST", "/api/admin/polls", bytes.NewBuffer(highBody))
+	reqHigh.Header.Set("Content-Type", "application/json")
+	reqHigh.Header.Set("Authorization", "Bearer "+authResp.Token)
+	router.ServeHTTP(wHigh, reqHigh)
+	if wHigh.Code != http.StatusBadRequest {
+		t.Fatalf("Expected 400 Bad Request for duration > 120, got %d: %s", wHigh.Code, wHigh.Body.String())
+	}
+
 	pBody, _ := json.Marshal(poolPayload)
 	wCreate := httptest.NewRecorder()
 	reqCreate, _ := http.NewRequest("POST", "/api/admin/polls", bytes.NewBuffer(pBody))
