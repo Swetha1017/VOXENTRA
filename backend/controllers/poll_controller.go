@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"live-polling-backend/database"
 	"live-polling-backend/models"
@@ -82,8 +83,50 @@ func (p *PollController) GetPoll(c *gin.Context) {
 		}
 	}
 
+	// Result Visibility & Privacy Enforcement
+	isAdmin := false
+	if role, exists := c.Get("role"); exists && role == "admin" {
+		isAdmin = true
+	}
+
+	// Make a shallow copy of poll to avoid altering cache
+	pollCopy := *poll
+	pollCopy.Options = make([]models.PollOption, len(poll.Options))
+	copy(pollCopy.Options, poll.Options)
+
+	shouldHideResults := false
+	revealCondition := ""
+
+	if !isAdmin {
+		switch pollCopy.ResultVisibility {
+		case "after_vote":
+			if !hasVoted {
+				shouldHideResults = true
+				revealCondition = "Results will be revealed immediately after you submit your ballot."
+			}
+		case "after_close":
+			if pollCopy.IsActive && (pollCopy.TimerEnd == nil || time.Now().Before(*pollCopy.TimerEnd)) {
+				shouldHideResults = true
+				revealCondition = "Results will be disclosed when this voting session officially closes."
+			}
+		case "never":
+			shouldHideResults = true
+			revealCondition = "Results for this confidential poll are restricted to administrators."
+		}
+	}
+
+	if shouldHideResults {
+		pollCopy.ResultsHidden = true
+		pollCopy.ResultsRevealCondition = revealCondition
+		pollCopy.TotalVotes = 0
+		for i := range pollCopy.Options {
+			pollCopy.Options[i].Votes = 0
+			pollCopy.Options[i].Percentage = 0
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"poll":            poll,
+		"poll":            pollCopy,
 		"has_voted":       hasVoted,
 		"voted_option_id": votedOptionID,
 	})
@@ -117,7 +160,7 @@ func (p *PollController) ReactToPoll(c *gin.Context) {
 	})
 }
 
-// Mandatory Authenticated Action: Submit a Vote
+// Mandatory Authenticated Action: Submit a Vote (Single or Multi-Option)
 func (p *PollController) Vote(c *gin.Context) {
 	userIDHex, exists := c.Get("userID")
 	if !exists {
@@ -140,11 +183,11 @@ func (p *PollController) Vote(c *gin.Context) {
 
 	var req models.VoteRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Please specify a valid option"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Please specify your option choice(s)"})
 		return
 	}
 
-	update, err := database.DB.RecordVote(c.Request.Context(), userID, pollID, req.OptionID, req.ReferralSource)
+	update, err := database.DB.RecordVote(c.Request.Context(), userID, pollID, req.OptionID, req.OptionIDs, req.ReferralSource)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -234,33 +277,107 @@ func (p *PollController) AdminCreatePoll(c *gin.Context) {
 	}
 
 	duration := req.DurationMinutes
-	if duration != 0 && (duration < 25 || duration > 120) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Poll duration must be between 25 minutes and 2 hours (120 minutes)"})
-		return
-	}
 	if duration == 0 {
 		duration = 60
 	}
 
+	isEscalated := false
+	escalationReason := ""
+
+	if duration < 25 || duration > 120 {
+		if req.EscalationCode == "VOXENTRA_OVERRIDE_AUTH" && strings.TrimSpace(req.EscalationReason) != "" {
+			isEscalated = true
+			escalationReason = strings.TrimSpace(req.EscalationReason)
+		} else {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Poll duration must be between 25 minutes and 2 hours (120 minutes). Override requires authorization code and business justification.",
+			})
+			return
+		}
+	}
+
+	selectionType := req.SelectionType
+	if selectionType != "multiple" {
+		selectionType = "single"
+	}
+
+	maxSelections := req.MaxSelections
+	if selectionType == "multiple" {
+		if maxSelections <= 1 {
+			maxSelections = 2
+		}
+		if maxSelections > len(options) {
+			maxSelections = len(options)
+		}
+	} else {
+		maxSelections = 1
+	}
+
+	visibility := req.Visibility
+	if visibility != "restricted" && visibility != "private" {
+		visibility = "public"
+	}
+
+	resultVisibility := req.ResultVisibility
+	if resultVisibility != "after_vote" && resultVisibility != "after_close" && resultVisibility != "never" {
+		resultVisibility = "realtime"
+	}
+
+	tz := strings.TrimSpace(req.Timezone)
+	if tz == "" {
+		tz = "UTC"
+	}
+
+	now := time.Now().UTC()
+	timerEnd := now.Add(time.Duration(duration) * time.Minute)
+
+	adminNameStr := "Admin"
+	if username != nil {
+		adminNameStr = username.(string)
+	}
+
 	poll := models.Poll{
-		CreatorID:        creatorID,
-		CreatorName:      username.(string),
-		Title:            strings.TrimSpace(req.Title),
-		Description:      strings.TrimSpace(req.Description),
-		Category:         category,
-		Options:          options,
-		DurationMinutes:  duration,
-		MinParticipants:  minP,
-		MaxParticipants:  maxP,
-		EntryRequirement: entryReq,
-		RewardStructure:  rewardStruct,
-		Status:           "active",
+		CreatorID:         creatorID,
+		CreatorName:       adminNameStr,
+		Title:             strings.TrimSpace(req.Title),
+		Description:       strings.TrimSpace(req.Description),
+		Category:          category,
+		Options:           options,
+		DurationMinutes:   duration,
+		MinParticipants:   minP,
+		MaxParticipants:   maxP,
+		EntryRequirement:  entryReq,
+		RewardStructure:   rewardStruct,
+		SelectionType:     selectionType,
+		MaxSelections:     maxSelections,
+		Visibility:        visibility,
+		AllowedUserGroups: req.AllowedUserGroups,
+		ResultVisibility:  resultVisibility,
+		Timezone:          tz,
+		IsEscalated:       isEscalated,
+		EscalationReason:  escalationReason,
+		Status:            "active",
+		IsActive:          true,
+		TimerStart:        &now,
+		TimerEnd:          &timerEnd,
 	}
 
 	if err := database.DB.CreatePoll(c.Request.Context(), &poll); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create pool"})
 		return
 	}
+
+	// Record Audit Log
+	_ = database.DB.RecordAuditLog(c.Request.Context(), &models.AuditLog{
+		PollID:           poll.ID,
+		AdminID:          creatorID,
+		AdminName:        adminNameStr,
+		Action:           "create_poll",
+		Details:          fmt.Sprintf("Poll created with %d options, duration: %dm (%s), visibility: %s, selection: %s", len(options), duration, poll.Timezone, poll.Visibility, poll.SelectionType),
+		NewValue:         fmt.Sprintf("%dm", duration),
+		IsEscalated:      isEscalated,
+		EscalationReason: escalationReason,
+	})
 
 	c.JSON(http.StatusCreated, poll)
 }
@@ -272,6 +389,14 @@ func (p *PollController) AdminUpdatePoll(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid poll ID"})
 		return
+	}
+
+	userIDHex, _ := c.Get("userID")
+	username, _ := c.Get("username")
+	adminID, _ := primitive.ObjectIDFromHex(userIDHex.(string))
+	adminNameStr := "Admin"
+	if username != nil {
+		adminNameStr = username.(string)
 	}
 
 	var req models.UpdatePollRequest
@@ -286,18 +411,165 @@ func (p *PollController) AdminUpdatePoll(c *gin.Context) {
 		return
 	}
 
-	existing.Title = strings.TrimSpace(req.Title)
-	existing.Description = strings.TrimSpace(req.Description)
-	if req.Category != "" {
+	var auditDetails []string
+
+	// 1. Basic Details
+	if req.Title != "" && req.Title != existing.Title {
+		auditDetails = append(auditDetails, fmt.Sprintf("Title changed from '%s' to '%s'", existing.Title, req.Title))
+		existing.Title = strings.TrimSpace(req.Title)
+	}
+	if req.Description != "" && req.Description != existing.Description {
+		auditDetails = append(auditDetails, "Description updated")
+		existing.Description = strings.TrimSpace(req.Description)
+	}
+	if req.Category != "" && req.Category != existing.Category {
+		auditDetails = append(auditDetails, fmt.Sprintf("Category changed to '%s'", req.Category))
 		existing.Category = req.Category
 	}
-	if req.DurationMinutes > 0 {
-		if req.DurationMinutes < 25 || req.DurationMinutes > 120 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Poll duration must be between 25 minutes and 2 hours (120 minutes)"})
+
+	// 2. Settings: Selection Type & Max Selections
+	if req.SelectionType != "" && req.SelectionType != existing.SelectionType {
+		if existing.TotalVotes > 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Selection type cannot be changed after voting has commenced"})
 			return
 		}
-		existing.DurationMinutes = req.DurationMinutes
+		auditDetails = append(auditDetails, fmt.Sprintf("Selection type changed from '%s' to '%s'", existing.SelectionType, req.SelectionType))
+		existing.SelectionType = req.SelectionType
 	}
+	if req.MaxSelections > 0 && req.MaxSelections != existing.MaxSelections {
+		auditDetails = append(auditDetails, fmt.Sprintf("Max selections changed from %d to %d", existing.MaxSelections, req.MaxSelections))
+		existing.MaxSelections = req.MaxSelections
+	}
+
+	// 3. Visibility & Allowed User Groups
+	if req.Visibility != "" && req.Visibility != existing.Visibility {
+		auditDetails = append(auditDetails, fmt.Sprintf("Visibility changed from '%s' to '%s'", existing.Visibility, req.Visibility))
+		existing.Visibility = req.Visibility
+	}
+	if req.AllowedUserGroups != nil {
+		existing.AllowedUserGroups = req.AllowedUserGroups
+		auditDetails = append(auditDetails, "Allowed user groups updated")
+	}
+
+	// 4. Result Visibility
+	if req.ResultVisibility != "" && req.ResultVisibility != existing.ResultVisibility {
+		auditDetails = append(auditDetails, fmt.Sprintf("Result visibility changed from '%s' to '%s'", existing.ResultVisibility, req.ResultVisibility))
+		existing.ResultVisibility = req.ResultVisibility
+	}
+
+	// 5. Timezone
+	if req.Timezone != "" && req.Timezone != existing.Timezone {
+		existing.Timezone = req.Timezone
+		auditDetails = append(auditDetails, fmt.Sprintf("Timezone set to %s", req.Timezone))
+	}
+
+	// 6. Option Editing Guard (Zero-vote constraint)
+	if len(req.Options) > 0 {
+		optionsChanged := false
+		if len(req.Options) != len(existing.Options) {
+			optionsChanged = true
+		} else {
+			for i, opt := range req.Options {
+				if strings.TrimSpace(opt) != existing.Options[i].Text {
+					optionsChanged = true
+					break
+				}
+			}
+		}
+
+		if optionsChanged {
+			if existing.TotalVotes > 0 {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": fmt.Sprintf("Answer options cannot be modified after voting has commenced. Total votes recorded: %d", existing.TotalVotes),
+				})
+				return
+			}
+
+			if len(req.Options) < 2 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "A poll must have at least 2 options"})
+				return
+			}
+
+			uniqueOpts := make(map[string]bool)
+			var updatedOptions []models.PollOption
+			for i, optText := range req.Options {
+				trimmed := strings.TrimSpace(optText)
+				if trimmed == "" {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "Options cannot be empty"})
+					return
+				}
+				lower := strings.ToLower(trimmed)
+				if uniqueOpts[lower] {
+					c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Duplicate option: '%s'", trimmed)})
+					return
+				}
+				uniqueOpts[lower] = true
+				updatedOptions = append(updatedOptions, models.PollOption{
+					ID:         fmt.Sprintf("opt_%d", i+1),
+					Text:       trimmed,
+					Votes:      0,
+					Percentage: 0,
+				})
+			}
+			existing.Options = updatedOptions
+			auditDetails = append(auditDetails, fmt.Sprintf("Options modified (%d options)", len(updatedOptions)))
+		}
+	}
+
+	// 7. Duration Modification & Active Poll Countdown Recalculation
+	isEscalated := false
+	escalationReason := ""
+	if req.DurationMinutes > 0 && req.DurationMinutes != existing.DurationMinutes {
+		oldDur := existing.DurationMinutes
+		newDur := req.DurationMinutes
+
+		// Hard constraint: 25 to 120 minutes, unless valid escalation
+		if newDur < 25 || newDur > 120 {
+			if req.EscalationCode == "VOXENTRA_OVERRIDE_AUTH" && strings.TrimSpace(req.EscalationReason) != "" {
+				isEscalated = true
+				escalationReason = strings.TrimSpace(req.EscalationReason)
+				existing.IsEscalated = true
+				existing.EscalationReason = escalationReason
+			} else {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": "Poll duration must be between 25 minutes and 2 hours (120 minutes). Override requires authorization code and business justification.",
+				})
+				return
+			}
+		}
+
+		// Active Poll Recalculation Check: cannot shorten below elapsed time
+		if existing.TimerStart != nil {
+			elapsedMinutes := time.Since(*existing.TimerStart).Minutes()
+			if float64(newDur) < elapsedMinutes {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": fmt.Sprintf("Duration (%d min) cannot be shorter than time already elapsed (%.1f min)", newDur, elapsedMinutes),
+				})
+				return
+			}
+			// Adjust countdown timer end dynamically
+			newEnd := existing.TimerStart.Add(time.Duration(newDur) * time.Minute)
+			existing.TimerEnd = &newEnd
+		}
+
+		existing.DurationMinutes = newDur
+		auditDetails = append(auditDetails, fmt.Sprintf("Duration changed from %dm to %dm", oldDur, newDur))
+
+		// Log duration change specifically
+		_ = database.DB.RecordAuditLog(c.Request.Context(), &models.AuditLog{
+			PollID:           existing.ID,
+			AdminID:          adminID,
+			AdminName:        adminNameStr,
+			Action:           "duration_change",
+			Details:          fmt.Sprintf("Duration adjusted from %dm to %dm", oldDur, newDur),
+			OldValue:         fmt.Sprintf("%dm", oldDur),
+			NewValue:         fmt.Sprintf("%dm", newDur),
+			IsEscalated:      isEscalated,
+			EscalationReason: escalationReason,
+		})
+	}
+
+	// 8. Active/Pause Status
 	if req.IsActive != nil {
 		existing.IsActive = *req.IsActive
 		if *req.IsActive {
@@ -305,31 +577,25 @@ func (p *PollController) AdminUpdatePoll(c *gin.Context) {
 		} else {
 			existing.Status = "paused"
 		}
-	}
-
-	if len(req.Options) >= 2 {
-		var updatedOptions []models.PollOption
-		for i, optText := range req.Options {
-			optID := fmt.Sprintf("opt_%d", i+1)
-			var oldVotes int64 = 0
-			for _, oldOpt := range existing.Options {
-				if oldOpt.Text == optText || oldOpt.ID == optID {
-					oldVotes = oldOpt.Votes
-					break
-				}
-			}
-			updatedOptions = append(updatedOptions, models.PollOption{
-				ID:    optID,
-				Text:  optText,
-				Votes: oldVotes,
-			})
-		}
-		existing.Options = updatedOptions
+		auditDetails = append(auditDetails, fmt.Sprintf("Status set to %s", existing.Status))
 	}
 
 	if err := database.DB.UpdatePoll(c.Request.Context(), existing); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update poll"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	// General audit log if other settings changed
+	if len(auditDetails) > 0 {
+		_ = database.DB.RecordAuditLog(c.Request.Context(), &models.AuditLog{
+			PollID:           existing.ID,
+			AdminID:          adminID,
+			AdminName:        adminNameStr,
+			Action:           "poll_edit",
+			Details:          strings.Join(auditDetails, "; "),
+			IsEscalated:      isEscalated,
+			EscalationReason: escalationReason,
+		})
 	}
 
 	websocket.BroadcastEvent("poll_update", existing)
@@ -453,3 +719,24 @@ func (p *PollController) AdminGetAnalytics(c *gin.Context) {
 
 	c.JSON(http.StatusOK, analytics)
 }
+
+// ADMIN EXCLUSIVE: Get Audit Logs for a Poll
+func (p *PollController) GetPollAuditLogs(c *gin.Context) {
+	idHex := c.Param("id")
+	pollID, err := primitive.ObjectIDFromHex(idHex)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid poll ID"})
+		return
+	}
+
+	logs, err := database.DB.GetAuditLogsByPollID(c.Request.Context(), pollID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch audit logs"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"audit_logs": logs,
+	})
+}
+

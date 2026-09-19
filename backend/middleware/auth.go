@@ -119,3 +119,29 @@ func AdminRequired(secret string) gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+// OptionalAuth parses JWT if provided, but does not block unauthenticated requests
+func OptionalAuth(secret string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		if authHeader != "" {
+			parts := strings.Split(authHeader, " ")
+			if len(parts) == 2 && parts[0] == "Bearer" {
+				claims := &JWTClaims{}
+				token, err := jwt.ParseWithClaims(parts[1], claims, func(token *jwt.Token) (interface{}, error) {
+					if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+						return nil, errors.New("unexpected signing method")
+					}
+					return []byte(secret), nil
+				})
+				if err == nil && token.Valid {
+					c.Set("userID", claims.UserID)
+					c.Set("username", claims.Username)
+					c.Set("role", claims.Role)
+				}
+			}
+		}
+		c.Next()
+	}
+}
+

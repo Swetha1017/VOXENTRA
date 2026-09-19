@@ -6,7 +6,8 @@ import { ShareModal } from "../components/ShareModal";
 import { 
   CheckCircle2, Share2, Clock, Users, Send, 
   ArrowLeft, Lock, Trash2, ThumbsUp, ThumbsDown, 
-  Eye, MessageSquare, Check, Sparkles, AlertCircle 
+  Eye, MessageSquare, Check, Sparkles, AlertCircle,
+  EyeOff, CheckSquare, Square, Shield
 } from "lucide-react";
 
 export const PollView = ({ pollId, navigate }) => {
@@ -14,6 +15,7 @@ export const PollView = ({ pollId, navigate }) => {
   const [poll, setPoll] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedOption, setSelectedOption] = useState("");
+  const [selectedOptions, setSelectedOptions] = useState([]);
   const [hasVoted, setHasVoted] = useState(false);
   const [votedOptionId, setVotedOptionId] = useState("");
   const [voting, setVoting] = useState(false);
@@ -159,30 +161,66 @@ export const PollView = ({ pollId, navigate }) => {
     }
   };
 
-  // Option Ballot Submission
+  // Option Selection Toggle (Single & Multi-Select Support)
+  const toggleOption = (optId) => {
+    if (hasVoted || !poll?.is_active) return;
+    if (poll?.selection_type === "multiple") {
+      const max = poll.max_selections || 2;
+      if (selectedOptions.includes(optId)) {
+        setSelectedOptions((prev) => prev.filter((id) => id !== optId));
+      } else {
+        if (selectedOptions.length >= max) {
+          alert(`You can select at most ${max} choices for this ballot.`);
+          return;
+        }
+        setSelectedOptions((prev) => [...prev, optId]);
+      }
+    } else {
+      setSelectedOption(optId);
+    }
+  };
+
+  // Option Ballot Submission (Supports Single & Multi-Selection)
   const handleVote = async () => {
     if (!isAuthenticated) {
       openAuthModal("register", pollId);
       return;
     }
 
-    if (!selectedOption) {
-      alert("Please choose an option before submitting your ballot.");
-      return;
+    const isMulti = poll?.selection_type === "multiple";
+    if (isMulti) {
+      if (!selectedOptions || selectedOptions.length === 0) {
+        alert("Please select at least one choice before submitting your ballot.");
+        return;
+      }
+      const max = poll?.max_selections || 2;
+      if (selectedOptions.length > max) {
+        alert(`You can select at most ${max} choices.`);
+        return;
+      }
+    } else {
+      if (!selectedOption) {
+        alert("Please choose an option before submitting your ballot.");
+        return;
+      }
     }
 
     setVoting(true);
     setError("");
 
     try {
-      await api.post(`/api/polls/${pollId}/vote`, {
-        option_id: selectedOption,
-        referral_source: "poll_detail",
-      });
+      const payload = isMulti
+        ? { option_ids: selectedOptions, referral_source: "poll_detail" }
+        : { option_id: selectedOption, referral_source: "poll_detail" };
+
+      await api.post(`/api/polls/${pollId}/vote`, payload);
 
       setHasVoted(true);
-      setVotedOptionId(selectedOption);
+      if (!isMulti) {
+        setVotedOptionId(selectedOption);
+      }
       confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
+      fetchPollAndComments();
     } catch (err) {
       setError(err.message || "Voting failed");
     } finally {
@@ -307,13 +345,19 @@ export const PollView = ({ pollId, navigate }) => {
           <div className="separated-metrics-grid">
             {/* 1. Distinct Vote Count Element */}
             <div className="metric-stat-box">
-              <div className="metric-stat-icon-wrapper" style={{ background: "rgba(99, 102, 241, 0.15)", color: "#818cf8" }}>
-                <CheckCircle2 size={20} />
+              <div className="metric-stat-icon-wrapper" style={{
+                background: poll.results_hidden ? "rgba(139, 92, 246, 0.15)" : "rgba(99, 102, 241, 0.15)",
+                color: poll.results_hidden ? "#c084fc" : "#818cf8"
+              }}>
+                {poll.results_hidden ? <Shield size={20} /> : <CheckCircle2 size={20} />}
               </div>
               <div className="metric-stat-info">
                 <span className="metric-stat-label">Total Votes</span>
-                <span className="metric-stat-val">
-                  {poll.total_votes?.toLocaleString() || "0"}
+                <span className="metric-stat-val" style={{
+                  fontSize: poll.results_hidden ? "0.95rem" : "1.25rem",
+                  color: poll.results_hidden ? "#c084fc" : undefined
+                }}>
+                  {poll.results_hidden ? "Confidential" : (poll.total_votes?.toLocaleString() || "0")}
                 </span>
               </div>
             </div>
@@ -351,8 +395,11 @@ export const PollView = ({ pollId, navigate }) => {
               </div>
               <div className="metric-stat-info">
                 <span className="metric-stat-label">Time Remaining</span>
-                <span className="metric-stat-val" style={{ fontSize: "1.1rem" }}>
+                <span className="metric-stat-val" style={{ fontSize: "1.05rem" }}>
                   {formatTime(timeLeft)}
+                </span>
+                <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", display: "block", marginTop: "2px" }}>
+                  {poll.duration_minutes || 60}m session · {poll.timezone || "UTC"}
                 </span>
               </div>
             </div>
@@ -414,20 +461,67 @@ export const PollView = ({ pollId, navigate }) => {
             </div>
           </div>
 
-          {/* OPTION SELECTION LIST (Screenshot 2 Match: Clean rounded outlined cards with circular radio indicators) */}
+          {/* PRIVACY SHIELD BANNER (When Results Are Hidden) */}
+          {poll.results_hidden && (
+            <div style={{
+              background: "rgba(139, 92, 246, 0.12)",
+              border: "1px solid rgba(139, 92, 246, 0.35)",
+              color: "#c084fc",
+              padding: "14px 18px",
+              borderRadius: "12px",
+              marginBottom: "18px",
+              display: "flex",
+              alignItems: "center",
+              gap: "12px"
+            }}>
+              <EyeOff size={20} style={{ flexShrink: 0 }} />
+              <div>
+                <div style={{ fontWeight: 700, fontSize: "0.88rem" }}>Results Privacy Shield Active</div>
+                <div style={{ fontSize: "0.8rem", color: "rgba(192, 132, 252, 0.85)", marginTop: "2px" }}>
+                  {poll.results_reveal_condition || "Vote counts and percentages are confidential per administrative privacy policy."}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* MULTIPLE SELECTION BANNER */}
+          {poll.selection_type === "multiple" && (
+            <div style={{
+              background: "rgba(6, 182, 212, 0.1)",
+              border: "1px solid rgba(6, 182, 212, 0.3)",
+              color: "#22d3ee",
+              padding: "10px 16px",
+              borderRadius: "10px",
+              fontSize: "0.82rem",
+              marginBottom: "18px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between"
+            }}>
+              <span>☑️ Multiple Selection Poll: You may select up to <strong>{poll.max_selections || 2}</strong> choices.</span>
+              <span style={{ fontWeight: 800, background: "rgba(6, 182, 212, 0.2)", padding: "2px 8px", borderRadius: "6px" }}>
+                {selectedOptions.length} / {poll.max_selections || 2} selected
+              </span>
+            </div>
+          )}
+
+          {/* OPTION SELECTION LIST */}
           <div className="screenshot2-options-container">
             {poll.options.map((opt, idx) => {
-              const isSelected = selectedOption === opt.id || votedOptionId === opt.id;
-              const showResults = hasVoted || !poll.is_active;
+              const isMulti = poll.selection_type === "multiple";
+              const isSelected = isMulti
+                ? selectedOptions.includes(opt.id)
+                : (selectedOption === opt.id || votedOptionId === opt.id);
+              const showResults = (hasVoted || !poll.is_active) && !poll.results_hidden;
 
               return (
                 <div
                   key={opt.id || idx}
-                  onClick={() => !hasVoted && setSelectedOption(opt.id)}
+                  onClick={() => toggleOption(opt.id)}
                   className={`screenshot2-option-row ${isSelected ? "selected" : ""}`}
                   style={{ cursor: hasVoted ? "default" : "pointer" }}
                 >
-                  {/* Subtle progress fill when voted */}
+                  {/* Subtle progress fill when voted & results visible */}
                   {showResults && (
                     <div
                       className="screenshot2-option-progress"
@@ -435,10 +529,20 @@ export const PollView = ({ pollId, navigate }) => {
                     />
                   )}
 
-                  {/* Circular Radio Indicator */}
-                  <div className="screenshot2-radio-circle">
-                    {isSelected && <div className="screenshot2-radio-inner-dot" />}
-                  </div>
+                  {/* Radio or Checkbox Indicator */}
+                  {isMulti ? (
+                    <div style={{ marginRight: "12px", display: "flex", alignItems: "center" }}>
+                      {isSelected ? (
+                        <CheckSquare size={20} color="#06b6d4" />
+                      ) : (
+                        <Square size={20} color="var(--border-subtle)" />
+                      )}
+                    </div>
+                  ) : (
+                    <div className="screenshot2-radio-circle">
+                      {isSelected && <div className="screenshot2-radio-inner-dot" />}
+                    </div>
+                  )}
 
                   {/* Option Label Text */}
                   <span className="screenshot2-option-text">
@@ -563,27 +667,45 @@ export const PollView = ({ pollId, navigate }) => {
             </div>
           ) : (
             /* Cast Ballot Action Button */
-            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-              <button
-                onClick={handleVote}
-                disabled={voting || !selectedOption}
-                className="btn-vox-primary"
-                style={{
-                  width: "100%",
-                  padding: "15px",
-                  fontSize: "1.05rem",
-                  fontWeight: 800,
-                  borderRadius: "12px",
-                  opacity: !selectedOption ? 0.6 : 1,
-                  cursor: !selectedOption ? "not-allowed" : "pointer",
-                }}
-              >
-                {voting ? "Recording Ballot..." : selectedOption ? "Confirm & Cast Ballot" : "Select an Option Above to Vote"}
-              </button>
-              <div style={{ textAlign: "center", fontSize: "0.8rem", color: "var(--text-dim)" }}>
-                Verified 1-vote-per-citizen protocol enforced.
-              </div>
-            </div>
+            (() => {
+              const isMulti = poll.selection_type === "multiple";
+              const canSubmit = isMulti ? selectedOptions.length > 0 : !!selectedOption;
+              let btnText = "Select an Option Above to Vote";
+              if (voting) btnText = "Recording Ballot...";
+              else if (canSubmit) {
+                btnText = isMulti
+                  ? `Confirm & Cast Ballot (${selectedOptions.length} of ${poll.max_selections || 2} selected)`
+                  : "Confirm & Cast Ballot";
+              } else if (isMulti) {
+                btnText = `Select up to ${poll.max_selections || 2} Choices to Vote`;
+              }
+
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                  <button
+                    onClick={handleVote}
+                    disabled={voting || !canSubmit}
+                    className="btn-vox-primary"
+                    style={{
+                      width: "100%",
+                      padding: "15px",
+                      fontSize: "1.05rem",
+                      fontWeight: 800,
+                      borderRadius: "12px",
+                      opacity: !canSubmit ? 0.6 : 1,
+                      cursor: !canSubmit ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    {btnText}
+                  </button>
+                  <div style={{ textAlign: "center", fontSize: "0.8rem", color: "var(--text-dim)" }}>
+                    {isMulti
+                      ? `Multi-selection ballot: max ${poll.max_selections || 2} choices allowed.`
+                      : "Verified 1-vote-per-citizen protocol enforced."}
+                  </div>
+                </div>
+              );
+            })()
           )}
         </div>
 

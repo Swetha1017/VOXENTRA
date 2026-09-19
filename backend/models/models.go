@@ -45,9 +45,38 @@ type Poll struct {
 	Downvotes        int64              `bson:"downvotes" json:"downvotes"`
 	TimerStart       *time.Time         `bson:"timer_start,omitempty" json:"timer_start,omitempty"`
 	TimerEnd         *time.Time         `bson:"timer_end,omitempty" json:"timer_end,omitempty"`
-	DurationMinutes  int                `bson:"duration_minutes" json:"duration_minutes"`
-	RemainingSec     int64              `bson:"-" json:"remaining_seconds"`
-	CreatedAt        time.Time          `bson:"created_at" json:"created_at"`
+	DurationMinutes          int                `bson:"duration_minutes" json:"duration_minutes"`
+	RemainingSec             int64              `bson:"-" json:"remaining_seconds"`
+	SelectionType            string             `bson:"selection_type" json:"selection_type"`                       // "single" or "multiple"
+	MaxSelections            int                `bson:"max_selections" json:"max_selections"`                       // Maximum options allowed in multi-selection
+	Visibility               string             `bson:"visibility" json:"visibility"`                               // "public", "restricted", "private"
+	AllowedUserGroups        []string           `bson:"allowed_user_groups" json:"allowed_user_groups"`             // e.g. ["all"], ["verified"], ["vip"]
+	ResultVisibility         string             `bson:"result_visibility" json:"result_visibility"`                 // "realtime", "after_vote", "after_close", "never"
+	Timezone                 string             `bson:"timezone" json:"timezone"`                                   // e.g. "UTC"
+	IsEscalated              bool               `bson:"is_escalated" json:"is_escalated"`                           // True if created/edited with special duration override
+	EscalationReason         string             `bson:"escalation_reason,omitempty" json:"escalation_reason,omitempty"`
+	ResultsHidden            bool               `bson:"-" json:"results_hidden"`                                    // Injected during view if caller cannot yet see results
+	ResultsRevealCondition   string             `bson:"-" json:"results_reveal_condition,omitempty"`               // Explanation for when results will be disclosed
+	CreatedAt                time.Time          `bson:"created_at" json:"created_at"`
+}
+
+type AuditLog struct {
+	ID               primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	PollID           primitive.ObjectID `bson:"poll_id" json:"poll_id"`
+	AdminID          primitive.ObjectID `bson:"admin_id" json:"admin_id"`
+	AdminEmail       string             `bson:"admin_email" json:"admin_email"`
+	AdminName        string             `bson:"admin_name,omitempty" json:"admin_name,omitempty"`
+	Action           string             `bson:"action" json:"action"` // "create", "update_details", "update_duration", "update_options", "update_settings", "escalation_override", "pause", "resume", "end"
+	OldDuration      int                `bson:"old_duration" json:"old_duration"`
+	NewDuration      int                `bson:"new_duration" json:"new_duration"`
+	OldValue         string             `bson:"old_value,omitempty" json:"old_value,omitempty"`
+	NewValue         string             `bson:"new_value,omitempty" json:"new_value,omitempty"`
+	Details          string             `bson:"details,omitempty" json:"details,omitempty"`
+	Reason           string             `bson:"reason,omitempty" json:"reason,omitempty"`
+	IsEscalated      bool               `bson:"is_escalated" json:"is_escalated"`
+	EscalationReason string             `bson:"escalation_reason,omitempty" json:"escalation_reason,omitempty"`
+	Timestamp        time.Time          `bson:"timestamp" json:"timestamp"`
+	Timezone         string             `bson:"timezone" json:"timezone"`
 }
 
 type PollReactionRequest struct {
@@ -139,29 +168,46 @@ type AuthResponse struct {
 }
 
 type CreatePollRequest struct {
-	Title            string   `json:"title" binding:"required,min=3,max=200"`
-	Description      string   `json:"description" binding:"max=500"`
-	Category         string   `json:"category"`
-	Options          []string `json:"options" binding:"required,min=2,max=10,dive,min=1,max=100"`
-	DurationMinutes  int      `json:"duration_minutes"`
-	MinParticipants  int      `json:"min_participants"`
-	MaxParticipants  int      `json:"max_participants"`
-	EntryRequirement string   `json:"entry_requirement"`
-	RewardStructure  string   `json:"reward_structure"`
+	Title             string   `json:"title" binding:"required,min=3,max=200"`
+	Description       string   `json:"description" binding:"max=500"`
+	Category          string   `json:"category"`
+	Options           []string `json:"options" binding:"required,min=2,max=10,dive,min=1,max=100"`
+	DurationMinutes   int      `json:"duration_minutes"`
+	MinParticipants   int      `json:"min_participants"`
+	MaxParticipants   int      `json:"max_participants"`
+	EntryRequirement  string   `json:"entry_requirement"`
+	RewardStructure   string   `json:"reward_structure"`
+	SelectionType     string   `json:"selection_type"`      // "single" or "multiple"
+	MaxSelections     int      `json:"max_selections"`      // max choices for multiple
+	Visibility        string   `json:"visibility"`          // "public", "restricted", "private"
+	AllowedUserGroups []string `json:"allowed_user_groups"` // e.g. ["all"], ["verified"], ["vip"]
+	ResultVisibility  string   `json:"result_visibility"`   // "realtime", "after_vote", "after_close", "never"
+	Timezone          string   `json:"timezone"`            // e.g. "UTC"
+	EscalationCode    string   `json:"escalation_code"`     // "VOXENTRA_OVERRIDE_AUTH"
+	EscalationReason  string   `json:"escalation_reason"`
 }
 
 type UpdatePollRequest struct {
-	Title           string   `json:"title" binding:"required,min=3,max=200"`
-	Description     string   `json:"description" binding:"max=500"`
-	Category        string   `json:"category"`
-	Options         []string `json:"options" binding:"required,min=2,max=10,dive,min=1,max=100"`
-	DurationMinutes int      `json:"duration_minutes"`
-	IsActive        *bool    `json:"is_active"`
+	Title             string   `json:"title" binding:"required,min=3,max=200"`
+	Description       string   `json:"description" binding:"max=500"`
+	Category          string   `json:"category"`
+	Options           []string `json:"options"` // allowed only if total_votes == 0
+	DurationMinutes   int      `json:"duration_minutes"`
+	IsActive          *bool    `json:"is_active"`
+	SelectionType     string   `json:"selection_type"`
+	MaxSelections     int      `json:"max_selections"`
+	Visibility        string   `json:"visibility"`
+	AllowedUserGroups []string `json:"allowed_user_groups"`
+	ResultVisibility  string   `json:"result_visibility"`
+	Timezone          string   `json:"timezone"`
+	EscalationCode    string   `json:"escalation_code"`
+	EscalationReason  string   `json:"escalation_reason"`
 }
 
 type VoteRequest struct {
-	OptionID       string `json:"option_id" binding:"required"`
-	ReferralSource string `json:"referral_source"`
+	OptionID       string   `json:"option_id"`  // for single selection
+	OptionIDs      []string `json:"option_ids"` // for multiple selection
+	ReferralSource string   `json:"referral_source"`
 }
 
 type CreateCommentRequest struct {

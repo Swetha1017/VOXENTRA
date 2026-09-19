@@ -5,7 +5,7 @@ import {
   Shield, Plus, Edit2, Trash2, ToggleLeft, ToggleRight, Clock, 
   BarChart3, Users, MessageSquare, AlertTriangle, CheckCircle2, 
   X, Lock, Mail, ArrowRight, ArrowLeft, Share2, Sparkles, RefreshCw,
-  Pause, Play, Archive, Check, Layers, Award
+  Pause, Play, Archive, Check, Layers, Award, History, Key, CheckSquare, EyeOff
 } from "lucide-react";
 import { showToast } from "../components/Toast";
 
@@ -30,7 +30,7 @@ export const AdminPortal = ({ navigate }) => {
   const formatDuration = (mins) => {
     const m = Number(mins);
     if (isNaN(m) || m < 25) return `${m || 0}m (Min 25m)`;
-    if (m === 60) return "1 hour";
+    if (m === 60) return "1 hour (Default)";
     if (m === 120) return "2 hours (Max)";
     if (m > 60) {
       const hours = Math.floor(m / 60);
@@ -44,10 +44,56 @@ export const AdminPortal = ({ navigate }) => {
     { value: 25, label: "25m (Min)" },
     { value: 30, label: "30m" },
     { value: 45, label: "45m" },
-    { value: 60, label: "1h (60m)" },
+    { value: 60, label: "1h (60m Default)" },
     { value: 90, label: "1.5h (90m)" },
     { value: 120, label: "2h (Max)" },
   ];
+
+  // Helper for boundary proximity warnings
+  const getDurationWarning = (mins, isEscalated) => {
+    const m = Number(mins);
+    if (isEscalated) {
+      return {
+        type: "escalation",
+        text: "🚨 Escalation Override Active: Custom duration approved by authorization key.",
+      };
+    }
+    if (m <= 30) {
+      return {
+        type: "warning",
+        text: "⚠️ Rapid Ballot Warning: Short duration (≤ 30 mins). Participants must act promptly.",
+      };
+    }
+    if (m >= 110) {
+      return {
+        type: "warning",
+        text: "⚠️ Extended Window Warning: Approaching maximum 2-hour ceiling (≥ 110 mins). Ensure sustained engagement.",
+      };
+    }
+    return null;
+  };
+
+  // ==========================================
+  // AUDIT LOG STATE & HANDLERS
+  // ==========================================
+  const [auditModalOpen, setAuditModalOpen] = useState(false);
+  const [auditPoll, setAuditPoll] = useState(null);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+
+  const handleViewAuditLogs = async (poll) => {
+    setAuditPoll(poll);
+    setAuditModalOpen(true);
+    setAuditLoading(true);
+    try {
+      const res = await api.get(`/api/admin/polls/${poll.id}/audit-logs`);
+      setAuditLogs(res?.audit_logs || []);
+    } catch (err) {
+      showToast("Failed to load audit logs: " + err.message, "error");
+    } finally {
+      setAuditLoading(false);
+    }
+  };
 
   // ==========================================
   // QUICK CREATE POLL MODAL STATE
@@ -59,6 +105,15 @@ export const AdminPortal = ({ navigate }) => {
     description: "",
     duration: 60,
     options: ["", "", ""],
+    selectionType: "single",
+    maxSelections: 2,
+    visibility: "public",
+    allowedUserGroups: ["all"],
+    resultVisibility: "realtime",
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+    isEscalated: false,
+    escalationCode: "",
+    escalationReason: "",
   });
   const [quickCreateError, setQuickCreateError] = useState("");
   const [quickCreateLoading, setQuickCreateLoading] = useState(false);
@@ -106,9 +161,16 @@ export const AdminPortal = ({ navigate }) => {
     }
 
     const dur = Number(quickCreateForm.duration);
-    if (dur < 25 || dur > 120) {
+    if (!quickCreateForm.isEscalated && (dur < 25 || dur > 120)) {
       setQuickCreateError("Poll duration must be between 25 minutes and 2 hours (120 minutes)");
       return;
+    }
+
+    if (quickCreateForm.isEscalated) {
+      if (!quickCreateForm.escalationCode.trim() || !quickCreateForm.escalationReason.trim()) {
+        setQuickCreateError("Escalation override requires the authorization code and business justification");
+        return;
+      }
     }
 
     setQuickCreateLoading(true);
@@ -121,6 +183,14 @@ export const AdminPortal = ({ navigate }) => {
         options: cleanOpts,
         entry_requirement: "Free / Open to All",
         reward_structure: "Winner Takes All XP",
+        selection_type: quickCreateForm.selectionType,
+        max_selections: Number(quickCreateForm.maxSelections),
+        visibility: quickCreateForm.visibility,
+        allowed_user_groups: quickCreateForm.allowedUserGroups,
+        result_visibility: quickCreateForm.resultVisibility,
+        timezone: quickCreateForm.timezone,
+        escalation_code: quickCreateForm.isEscalated ? quickCreateForm.escalationCode.trim() : "",
+        escalation_reason: quickCreateForm.isEscalated ? quickCreateForm.escalationReason.trim() : "",
       });
 
       showToast("Voting pool successfully created and published live!");
@@ -131,6 +201,15 @@ export const AdminPortal = ({ navigate }) => {
         description: "",
         duration: 60,
         options: ["", "", ""],
+        selectionType: "single",
+        maxSelections: 2,
+        visibility: "public",
+        allowedUserGroups: ["all"],
+        resultVisibility: "realtime",
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+        isEscalated: false,
+        escalationCode: "",
+        escalationReason: "",
       });
       loadAdminData();
     } catch (err) {
@@ -157,6 +236,17 @@ export const AdminPortal = ({ navigate }) => {
   const [poolConfirmed, setPoolConfirmed] = useState(false);
   const [wizardError, setWizardError] = useState("");
 
+  // Advanced Wizard Settings
+  const [poolSelectionType, setPoolSelectionType] = useState("single");
+  const [poolMaxSelections, setPoolMaxSelections] = useState(2);
+  const [poolVisibility, setPoolVisibility] = useState("public");
+  const [poolAllowedGroups, setPoolAllowedGroups] = useState(["all"]);
+  const [poolResultVisibility, setPoolResultVisibility] = useState("realtime");
+  const [poolTimezone, setPoolTimezone] = useState(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
+  const [poolIsEscalated, setPoolIsEscalated] = useState(false);
+  const [poolEscalationCode, setPoolEscalationCode] = useState("");
+  const [poolEscalationReason, setPoolEscalationReason] = useState("");
+
   // ==========================================
   // EDIT POOL STATE & HANDLERS
   // ==========================================
@@ -168,6 +258,15 @@ export const AdminPortal = ({ navigate }) => {
     duration: 60,
     isActive: true,
     options: ["", ""],
+    selectionType: "single",
+    maxSelections: 2,
+    visibility: "public",
+    allowedUserGroups: ["all"],
+    resultVisibility: "realtime",
+    timezone: "UTC",
+    isEscalated: false,
+    escalationCode: "",
+    escalationReason: "",
   });
   const [editError, setEditError] = useState("");
   const [editLoading, setEditLoading] = useState(false);
@@ -179,18 +278,22 @@ export const AdminPortal = ({ navigate }) => {
       ? poll.options.map((o) => (typeof o === "string" ? o : o.text))
       : ["", ""];
     
-    // Ensure duration is clamped between 25 and 120 min
-    const validDuration = poll.duration_minutes && poll.duration_minutes >= 25 && poll.duration_minutes <= 120
-      ? poll.duration_minutes
-      : 60;
-
     setEditForm({
       title: poll.title || "",
       category: poll.category || "Artificial Intelligence",
       description: poll.description || "",
-      duration: validDuration,
+      duration: poll.duration_minutes || 60,
       isActive: poll.is_active !== undefined ? poll.is_active : true,
       options: opts,
+      selectionType: poll.selection_type || "single",
+      maxSelections: poll.max_selections || 2,
+      visibility: poll.visibility || "public",
+      allowedUserGroups: poll.allowed_user_groups || ["all"],
+      resultVisibility: poll.result_visibility || "realtime",
+      timezone: poll.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+      isEscalated: poll.is_escalated || false,
+      escalationCode: "",
+      escalationReason: poll.escalation_reason || "",
     });
   };
 
@@ -224,34 +327,54 @@ export const AdminPortal = ({ navigate }) => {
       return;
     }
 
-    const cleanOpts = editForm.options.map((o) => o.trim()).filter(Boolean);
-    if (cleanOpts.length < 2) {
-      setEditError("Please provide at least 2 non-empty options");
-      return;
-    }
-
-    const unique = new Set(cleanOpts.map((o) => o.toLowerCase()));
-    if (unique.size !== cleanOpts.length) {
-      setEditError("Options must be unique (no duplicates)");
-      return;
-    }
-
     const editDuration = Number(editForm.duration);
-    if (isNaN(editDuration) || editDuration < 25 || editDuration > 120) {
+    if (!editForm.isEscalated && (isNaN(editDuration) || editDuration < 25 || editDuration > 120)) {
       setEditError("Poll duration must be between 25 minutes and 2 hours (120 minutes)");
       return;
     }
 
+    if (editForm.isEscalated) {
+      if (!editForm.escalationCode.trim() || !editForm.escalationReason.trim()) {
+        setEditError("Escalation override requires authorization code (VOXENTRA_OVERRIDE_AUTH) and justification");
+        return;
+      }
+    }
+
+    const payload = {
+      title: editForm.title.trim(),
+      description: editForm.description.trim(),
+      category: editForm.category,
+      duration_minutes: editDuration,
+      is_active: editForm.isActive,
+      selection_type: editForm.selectionType,
+      max_selections: Number(editForm.maxSelections),
+      visibility: editForm.visibility,
+      allowed_user_groups: editForm.allowedUserGroups,
+      result_visibility: editForm.resultVisibility,
+      timezone: editForm.timezone,
+      escalation_code: editForm.isEscalated ? editForm.escalationCode.trim() : "",
+      escalation_reason: editForm.isEscalated ? editForm.escalationReason.trim() : "",
+    };
+
+    // STRICT ZERO-VOTE OPTION IMMUTABILITY GUARD
+    const totalVotesRecorded = editingPoll.total_votes || 0;
+    if (totalVotesRecorded === 0) {
+      const cleanOpts = editForm.options.map((o) => o.trim()).filter(Boolean);
+      if (cleanOpts.length < 2) {
+        setEditError("Please provide at least 2 non-empty options");
+        return;
+      }
+      const unique = new Set(cleanOpts.map((o) => o.toLowerCase()));
+      if (unique.size !== cleanOpts.length) {
+        setEditError("Options must be unique (no duplicates)");
+        return;
+      }
+      payload.options = cleanOpts;
+    }
+
     setEditLoading(true);
     try {
-      await api.put(`/api/admin/polls/${editingPoll.id}`, {
-        title: editForm.title.trim(),
-        description: editForm.description.trim(),
-        category: editForm.category,
-        duration_minutes: editDuration,
-        is_active: editForm.isActive,
-        options: cleanOpts,
-      });
+      await api.put(`/api/admin/polls/${editingPoll.id}`, payload);
 
       showToast("Voting pool updated successfully!");
       setEditingPoll(null);
@@ -391,9 +514,15 @@ export const AdminPortal = ({ navigate }) => {
         setWizardError("Maximum participants cannot be less than minimum participants");
         return false;
       }
-      if (poolDuration < 25 || poolDuration > 120) {
+      if (!poolIsEscalated && (poolDuration < 25 || poolDuration > 120)) {
         setWizardError("Poll duration must be between 25 minutes and 2 hours (120 minutes)");
         return false;
+      }
+      if (poolIsEscalated) {
+        if (!poolEscalationCode.trim() || !poolEscalationReason.trim()) {
+          setWizardError("Special authorization override requires security key (VOXENTRA_OVERRIDE_AUTH) and reason");
+          return false;
+        }
       }
     } else if (step === 3) {
       const cleanOpts = poolOptions.map((o) => o.trim()).filter(Boolean);
@@ -442,6 +571,14 @@ export const AdminPortal = ({ navigate }) => {
         max_participants: Number(poolMaxParticipants),
         entry_requirement: poolEntryReq,
         reward_structure: poolReward,
+        selection_type: poolSelectionType,
+        max_selections: Number(poolMaxSelections),
+        visibility: poolVisibility,
+        allowed_user_groups: poolAllowedGroups,
+        result_visibility: poolResultVisibility,
+        timezone: poolTimezone,
+        escalation_code: poolIsEscalated ? poolEscalationCode.trim() : "",
+        escalation_reason: poolIsEscalated ? poolEscalationReason.trim() : "",
       });
 
       showToast("Voting Pool successfully created and launched live!");
@@ -449,6 +586,13 @@ export const AdminPortal = ({ navigate }) => {
       setPoolName("");
       setPoolDesc("");
       setPoolOptions(["", "", ""]);
+      setPoolSelectionType("single");
+      setPoolMaxSelections(2);
+      setPoolVisibility("public");
+      setPoolResultVisibility("realtime");
+      setPoolIsEscalated(false);
+      setPoolEscalationCode("");
+      setPoolEscalationReason("");
       setWizardStep(1);
       setPoolConfirmed(false);
       setActiveTab("pools");
@@ -771,7 +915,7 @@ export const AdminPortal = ({ navigate }) => {
                 }}
               >
                 <div style={{ flex: 1, minWidth: "300px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px", flexWrap: "wrap" }}>
                     <span style={{
                       background: p.is_active ? "rgba(16, 185, 129, 0.15)" : "rgba(239, 68, 68, 0.15)",
                       color: p.is_active ? "#34d399" : "#f87171",
@@ -782,6 +926,48 @@ export const AdminPortal = ({ navigate }) => {
                     }}>
                       {p.is_active ? "SESSION ACTIVE" : (p.status || "CLOSED").toUpperCase()}
                     </span>
+                    <span style={{
+                      background: "rgba(6, 182, 212, 0.15)",
+                      color: "#22d3ee",
+                      padding: "2px 8px",
+                      borderRadius: "6px",
+                      fontSize: "0.72rem",
+                      fontWeight: 700,
+                    }}>
+                      ⏱️ {p.duration_minutes || 60}m
+                    </span>
+                    <span style={{
+                      background: "rgba(139, 92, 246, 0.15)",
+                      color: "#c084fc",
+                      padding: "2px 8px",
+                      borderRadius: "6px",
+                      fontSize: "0.72rem",
+                      fontWeight: 700,
+                    }}>
+                      {p.selection_type === "multiple" ? `Multi-Choice (Max ${p.max_selections || 2})` : "Single Choice"}
+                    </span>
+                    <span style={{
+                      background: "rgba(245, 158, 11, 0.15)",
+                      color: "#fbbf24",
+                      padding: "2px 8px",
+                      borderRadius: "6px",
+                      fontSize: "0.72rem",
+                      fontWeight: 700,
+                    }}>
+                      {p.result_visibility === "after_vote" ? "After Vote Reveal" : p.result_visibility === "after_close" ? "After Close Reveal" : p.result_visibility === "never" ? "Confidential" : "Realtime Results"}
+                    </span>
+                    {p.is_escalated && (
+                      <span style={{
+                        background: "rgba(239, 68, 68, 0.2)",
+                        color: "#f87171",
+                        padding: "2px 8px",
+                        borderRadius: "6px",
+                        fontSize: "0.72rem",
+                        fontWeight: 800,
+                      }}>
+                        🚨 OVERRIDE
+                      </span>
+                    )}
                     <span style={{ fontSize: "0.75rem", color: "var(--text-dim)" }}>
                       {p.category} · Total Votes: {p.total_votes}
                     </span>
@@ -792,6 +978,8 @@ export const AdminPortal = ({ navigate }) => {
                   </h3>
 
                   <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", fontSize: "0.78rem", color: "var(--text-muted)" }}>
+                    <span>Visibility: <strong>{(p.visibility || "public").toUpperCase()}</strong></span>
+                    <span>·</span>
                     <span>Entry: <strong>{p.entry_requirement || "Free"}</strong></span>
                     <span>·</span>
                     <span>Reward: <strong>{p.reward_structure || "Winner Takes All"}</strong></span>
@@ -802,6 +990,24 @@ export const AdminPortal = ({ navigate }) => {
 
                 {/* Session Control Buttons */}
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                  <button
+                    onClick={() => handleViewAuditLogs(p)}
+                    className="btn-vox-secondary"
+                    style={{
+                      padding: "8px 14px",
+                      fontSize: "0.8rem",
+                      color: "#c084fc",
+                      border: "1px solid rgba(192, 132, 252, 0.4)",
+                      background: "rgba(192, 132, 252, 0.08)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                    }}
+                    title="View poll audit trail & change history"
+                  >
+                    <History size={14} /> Audit Trail
+                  </button>
+
                   <button
                     onClick={() => handleStartEdit(p)}
                     className="btn-vox-secondary"
@@ -1017,9 +1223,93 @@ export const AdminPortal = ({ navigate }) => {
           {wizardStep === 2 && (
             <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
               <h2 style={{ fontSize: "1.3rem", fontWeight: 800, color: "#ffffff" }}>
-                Step 2: Participant Limits & Session Duration
+                Step 2: Participant Limits, Governance & Session Duration
               </h2>
 
+              {/* Selection Type & Maximum Selections */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)", marginBottom: "6px" }}>
+                    Ballot Selection Type
+                  </label>
+                  <select
+                    value={poolSelectionType}
+                    onChange={(e) => setPoolSelectionType(e.target.value)}
+                    className="vox-input"
+                    style={{ background: "#0b0e20" }}
+                  >
+                    <option value="single">Single Choice (1 Option only)</option>
+                    <option value="multiple">Multiple Selection (Multi-choice ballot)</option>
+                  </select>
+                </div>
+
+                {poolSelectionType === "multiple" ? (
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)", marginBottom: "6px" }}>
+                      Max Allowed Selections per Voter
+                    </label>
+                    <input
+                      type="number"
+                      min="2"
+                      max="8"
+                      value={poolMaxSelections}
+                      onChange={(e) => setPoolMaxSelections(Math.max(2, Number(e.target.value)))}
+                      className="vox-input"
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)", marginBottom: "6px" }}>
+                      Voter Decision Limit
+                    </label>
+                    <input
+                      type="text"
+                      disabled
+                      value="Single Option Enforced"
+                      className="vox-input"
+                      style={{ opacity: 0.6, background: "rgba(255,255,255,0.02)" }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Poll Visibility & Result Visibility */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)", marginBottom: "6px" }}>
+                    Poll Visibility
+                  </label>
+                  <select
+                    value={poolVisibility}
+                    onChange={(e) => setPoolVisibility(e.target.value)}
+                    className="vox-input"
+                    style={{ background: "#0b0e20" }}
+                  >
+                    <option value="public">Public (Listed on Platform Feed)</option>
+                    <option value="restricted">Restricted (Verified Voters Only)</option>
+                    <option value="private">Private (Unlisted Direct Link)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)", marginBottom: "6px" }}>
+                    Result Visibility Policy
+                  </label>
+                  <select
+                    value={poolResultVisibility}
+                    onChange={(e) => setPoolResultVisibility(e.target.value)}
+                    className="vox-input"
+                    style={{ background: "#0b0e20" }}
+                  >
+                    <option value="realtime">Real-Time (Voters see live results immediately)</option>
+                    <option value="after_vote">After Voting (Revealed only after casting ballot)</option>
+                    <option value="after_close">Only After Poll Closes (Hidden until timer expires)</option>
+                    <option value="never">Never (Confidential / Administrator Eyes Only)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Participant Quorum & Cap */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
                 <div>
                   <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)", marginBottom: "6px" }}>
@@ -1054,13 +1344,19 @@ export const AdminPortal = ({ navigate }) => {
                 </div>
               </div>
 
-              <div>
+              {/* Voting Duration Configuration (25m - 120m) with Boundary Alerts */}
+              <div style={{
+                background: "rgba(255, 255, 255, 0.02)",
+                border: "1px solid var(--border-subtle)",
+                borderRadius: "14px",
+                padding: "18px",
+              }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", flexWrap: "wrap", gap: "6px" }}>
                   <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)" }}>
                     Voting Duration: <span style={{ color: "#22d3ee", fontWeight: 800 }}>{formatDuration(poolDuration)}</span> ({poolDuration} mins)
                   </label>
                   <span style={{ fontSize: "0.74rem", color: "#22d3ee", background: "rgba(6, 182, 212, 0.12)", padding: "2px 8px", borderRadius: "6px", border: "1px solid rgba(6, 182, 212, 0.3)" }}>
-                    Allowed: 25 min – 2 hrs (120m)
+                    Standard Constraint: 25 min – 2 hrs (120m)
                   </span>
                 </div>
 
@@ -1068,19 +1364,19 @@ export const AdminPortal = ({ navigate }) => {
                 <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "10px" }}>
                   <input
                     type="range"
-                    min="25"
-                    max="120"
-                    step="5"
+                    min={poolIsEscalated ? "1" : "25"}
+                    max={poolIsEscalated ? "480" : "120"}
+                    step={poolIsEscalated ? "1" : "5"}
                     value={poolDuration}
                     onChange={(e) => setPoolDuration(Number(e.target.value))}
                     style={{ flex: 1, accentColor: "#06b6d4", cursor: "pointer" }}
                   />
                   <input
                     type="number"
-                    min="25"
-                    max="120"
+                    min="1"
+                    max="480"
                     value={poolDuration}
-                    onChange={(e) => setPoolDuration(Math.max(25, Math.min(120, Number(e.target.value))))}
+                    onChange={(e) => setPoolDuration(Number(e.target.value))}
                     className="vox-input"
                     style={{ width: "90px", textAlign: "center", padding: "8px" }}
                   />
@@ -1088,7 +1384,7 @@ export const AdminPortal = ({ navigate }) => {
                 </div>
 
                 {/* Quick Presets */}
-                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "12px" }}>
                   {DURATION_PRESETS.map((p) => (
                     <button
                       key={p.value}
@@ -1109,9 +1405,98 @@ export const AdminPortal = ({ navigate }) => {
                     </button>
                   ))}
                 </div>
+
+                {/* Boundary Proximity Warning Alert */}
+                {getDurationWarning(poolDuration, poolIsEscalated) && (
+                  <div style={{
+                    background: getDurationWarning(poolDuration, poolIsEscalated).type === "escalation"
+                      ? "rgba(139, 92, 246, 0.15)"
+                      : "rgba(245, 158, 11, 0.15)",
+                    border: getDurationWarning(poolDuration, poolIsEscalated).type === "escalation"
+                      ? "1px solid rgba(139, 92, 246, 0.35)"
+                      : "1px solid rgba(245, 158, 11, 0.35)",
+                    color: getDurationWarning(poolDuration, poolIsEscalated).type === "escalation" ? "#c084fc" : "#fcd34d",
+                    padding: "8px 12px",
+                    borderRadius: "8px",
+                    fontSize: "0.78rem",
+                    fontWeight: 600,
+                    marginBottom: "12px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                  }}>
+                    {getDurationWarning(poolDuration, poolIsEscalated).text}
+                  </div>
+                )}
+
+                {/* Local & UTC Timezone Display */}
+                <div style={{
+                  fontSize: "0.75rem",
+                  color: "var(--text-muted)",
+                  background: "rgba(255, 255, 255, 0.02)",
+                  padding: "8px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid var(--border-subtle)",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  flexWrap: "wrap",
+                  gap: "6px",
+                }}>
+                  <span>🌐 Timezone: <strong>{poolTimezone}</strong></span>
+                  <span>
+                    Estimated Close: <strong>{new Date(Date.now() + poolDuration * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} Local</strong> ({new Date(Date.now() + poolDuration * 60000).toISOString().slice(11, 16)} UTC)
+                  </span>
+                </div>
+
+                {/* Special Authorization Override Drawer */}
+                <div style={{ marginTop: "14px", borderTop: "1px dashed var(--border-subtle)", paddingTop: "12px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <input
+                      type="checkbox"
+                      id="poolEscalate"
+                      checked={poolIsEscalated}
+                      onChange={(e) => setPoolIsEscalated(e.target.checked)}
+                      style={{ width: "16px", height: "16px", accentColor: "#ef4444", cursor: "pointer" }}
+                    />
+                    <label htmlFor="poolEscalate" style={{ fontSize: "0.8rem", color: poolIsEscalated ? "#f87171" : "var(--text-dim)", fontWeight: 700, cursor: "pointer" }}>
+                      Require Emergency / Custom Duration Override (&lt; 25m or &gt; 120m)
+                    </label>
+                  </div>
+
+                  {poolIsEscalated && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "10px", padding: "12px", background: "rgba(239, 68, 68, 0.05)", border: "1px solid rgba(239, 68, 68, 0.2)", borderRadius: "10px" }}>
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.75rem", color: "#fca5a5", fontWeight: 700, marginBottom: "4px" }}>
+                          Authorization Override Key *
+                        </label>
+                        <input
+                          type="password"
+                          value={poolEscalationCode}
+                          onChange={(e) => setPoolEscalationCode(e.target.value)}
+                          placeholder="Enter VOXENTRA_OVERRIDE_AUTH"
+                          className="vox-input"
+                          style={{ borderColor: "rgba(239, 68, 68, 0.4)" }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.75rem", color: "#fca5a5", fontWeight: 700, marginBottom: "4px" }}>
+                          Business Justification / Reason *
+                        </label>
+                        <textarea
+                          value={poolEscalationReason}
+                          onChange={(e) => setPoolEscalationReason(e.target.value)}
+                          placeholder="State the justification for bypassing standard duration limits..."
+                          className="vox-input"
+                          rows={2}
+                          style={{ borderColor: "rgba(239, 68, 68, 0.4)" }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "10px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "4px" }}>
                 <input
                   type="checkbox"
                   id="autoClose"
@@ -1486,6 +1871,46 @@ export const AdminPortal = ({ navigate }) => {
               </div>
             )}
 
+            {/* Zero-Vote Option Immutability Guard Banner */}
+            {(editingPoll.total_votes || 0) > 0 ? (
+              <div style={{
+                background: "rgba(245, 158, 11, 0.12)",
+                border: "1px solid rgba(245, 158, 11, 0.35)",
+                color: "#fbbf24",
+                padding: "12px 16px",
+                borderRadius: "10px",
+                fontSize: "0.85rem",
+                marginBottom: "20px",
+                display: "flex",
+                alignItems: "flex-start",
+                gap: "10px"
+              }}>
+                <Lock size={18} style={{ marginTop: "2px", flexShrink: 0 }} />
+                <div>
+                  <div style={{ fontWeight: 700 }}>Voting Options Locked ({editingPoll.total_votes} votes recorded)</div>
+                  <div style={{ fontSize: "0.78rem", color: "rgba(251, 191, 36, 0.85)", marginTop: "3px" }}>
+                    Strict integrity guard active: Answer options cannot be modified, added, or deleted once ballots have been cast. You may still safely adjust title, description, session duration, status, and visibility preferences.
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div style={{
+                background: "rgba(16, 185, 129, 0.1)",
+                border: "1px solid rgba(16, 185, 129, 0.3)",
+                color: "#34d399",
+                padding: "8px 14px",
+                borderRadius: "8px",
+                fontSize: "0.8rem",
+                marginBottom: "20px",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px"
+              }}>
+                <CheckCircle2 size={16} />
+                <span>0 votes cast: Answer options are fully unlocked and editable.</span>
+              </div>
+            )}
+
             <form onSubmit={handleSaveEdit} style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
               {/* Pool Name / Title */}
               <div>
@@ -1565,6 +1990,112 @@ export const AdminPortal = ({ navigate }) => {
                 />
               </div>
 
+              {/* Selection Type & Max Selections */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)", marginBottom: "6px" }}>
+                    Selection Type
+                  </label>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button
+                      type="button"
+                      onClick={() => setEditForm({ ...editForm, selectionType: "single" })}
+                      style={{
+                        flex: 1,
+                        padding: "8px",
+                        borderRadius: "8px",
+                        fontSize: "0.8rem",
+                        fontWeight: editForm.selectionType === "single" ? 700 : 500,
+                        background: editForm.selectionType === "single" ? "rgba(56, 189, 248, 0.2)" : "rgba(255,255,255,0.04)",
+                        border: editForm.selectionType === "single" ? "1px solid #38bdf8" : "1px solid var(--border-subtle)",
+                        color: editForm.selectionType === "single" ? "#38bdf8" : "#fff",
+                        cursor: "pointer"
+                      }}
+                    >
+                      Single Selection
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditForm({ ...editForm, selectionType: "multiple" })}
+                      style={{
+                        flex: 1,
+                        padding: "8px",
+                        borderRadius: "8px",
+                        fontSize: "0.8rem",
+                        fontWeight: editForm.selectionType === "multiple" ? 700 : 500,
+                        background: editForm.selectionType === "multiple" ? "rgba(56, 189, 248, 0.2)" : "rgba(255,255,255,0.04)",
+                        border: editForm.selectionType === "multiple" ? "1px solid #38bdf8" : "1px solid var(--border-subtle)",
+                        color: editForm.selectionType === "multiple" ? "#38bdf8" : "#fff",
+                        cursor: "pointer"
+                      }}
+                    >
+                      Multiple Selection
+                    </button>
+                  </div>
+                </div>
+
+                {editForm.selectionType === "multiple" ? (
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)", marginBottom: "6px" }}>
+                      Max Selections Allowed
+                    </label>
+                    <input
+                      type="number"
+                      min="2"
+                      max={editForm.options.length}
+                      value={editForm.maxSelections}
+                      onChange={(e) => setEditForm({ ...editForm, maxSelections: Math.max(2, Math.min(editForm.options.length, Number(e.target.value))) })}
+                      className="vox-input"
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)", marginBottom: "6px" }}>
+                      Ballot Mode
+                    </label>
+                    <div style={{ padding: "8px 12px", background: "rgba(255,255,255,0.02)", border: "1px solid var(--border-subtle)", borderRadius: "8px", fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                      1 Choice per Voter
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Poll Visibility & Result Visibility */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)", marginBottom: "6px" }}>
+                    Poll Visibility
+                  </label>
+                  <select
+                    value={editForm.visibility}
+                    onChange={(e) => setEditForm({ ...editForm, visibility: e.target.value })}
+                    className="vox-input"
+                    style={{ background: "#0b0e20" }}
+                  >
+                    <option value="public">Public (All Users)</option>
+                    <option value="restricted">Restricted (Designated Groups)</option>
+                    <option value="private">Private (Invite / Admin Only)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)", marginBottom: "6px" }}>
+                    Result Visibility
+                  </label>
+                  <select
+                    value={editForm.resultVisibility}
+                    onChange={(e) => setEditForm({ ...editForm, resultVisibility: e.target.value })}
+                    className="vox-input"
+                    style={{ background: "#0b0e20" }}
+                  >
+                    <option value="realtime">Real-time (Live percentage bar)</option>
+                    <option value="after_vote">After Voting (Hidden until vote cast)</option>
+                    <option value="after_close">After Poll Closes Only</option>
+                    <option value="never">Never (Admin / Internal Only)</option>
+                  </select>
+                </div>
+              </div>
+
               {/* Duration: strictly between 25 min and 120 min (2 hrs) */}
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", flexWrap: "wrap", gap: "6px" }}>
@@ -1621,16 +2152,103 @@ export const AdminPortal = ({ navigate }) => {
                     </button>
                   ))}
                 </div>
+
+                {/* Proximity Boundary Warning */}
+                {(() => {
+                  const warn = getDurationWarning(editForm.duration, editForm.isEscalated);
+                  if (!warn) return null;
+                  return (
+                    <div style={{
+                      marginTop: "8px",
+                      padding: "8px 12px",
+                      borderRadius: "8px",
+                      fontSize: "0.78rem",
+                      background: warn.type === "escalation" ? "rgba(168, 85, 247, 0.12)" : "rgba(245, 158, 11, 0.12)",
+                      border: warn.type === "escalation" ? "1px solid rgba(168, 85, 247, 0.3)" : "1px solid rgba(245, 158, 11, 0.3)",
+                      color: warn.type === "escalation" ? "#c084fc" : "#fbbf24",
+                    }}>
+                      {warn.text}
+                    </div>
+                  );
+                })()}
+
+                {/* Escalation Override Section */}
+                <div style={{
+                  background: "rgba(255, 255, 255, 0.02)",
+                  border: "1px dashed rgba(255, 255, 255, 0.15)",
+                  borderRadius: "10px",
+                  padding: "12px",
+                  marginTop: "12px"
+                }}>
+                  <div
+                    onClick={() => setEditForm({ ...editForm, isEscalated: !editForm.isEscalated })}
+                    style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "0.8rem", fontWeight: 600, color: editForm.isEscalated ? "#c084fc" : "var(--text-dim)" }}>
+                      <Key size={14} /> Admin Escalation Override (&lt; 25m or &gt; 120m)
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={editForm.isEscalated}
+                      onChange={(e) => setEditForm({ ...editForm, isEscalated: e.target.checked })}
+                      style={{ cursor: "pointer" }}
+                    />
+                  </div>
+
+                  {editForm.isEscalated && (
+                    <div style={{ marginTop: "10px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "4px" }}>
+                          Custom Duration (Minutes)
+                        </label>
+                        <input
+                          type="number"
+                          value={editForm.duration}
+                          onChange={(e) => setEditForm({ ...editForm, duration: Number(e.target.value) })}
+                          placeholder="e.g. 15 or 180"
+                          className="vox-input"
+                          style={{ fontSize: "0.8rem", padding: "6px 10px", width: "120px" }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "4px" }}>
+                          Authorization Code (VOXENTRA_OVERRIDE_AUTH)
+                        </label>
+                        <input
+                          type="password"
+                          value={editForm.escalationCode}
+                          onChange={(e) => setEditForm({ ...editForm, escalationCode: e.target.value })}
+                          placeholder="VOXENTRA_OVERRIDE_AUTH"
+                          className="vox-input"
+                          style={{ fontSize: "0.8rem", padding: "6px 10px" }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "4px" }}>
+                          Justification / Business Case
+                        </label>
+                        <input
+                          type="text"
+                          value={editForm.escalationReason}
+                          onChange={(e) => setEditForm({ ...editForm, escalationReason: e.target.value })}
+                          placeholder="e.g. Special executive townhall session authorized by leadership"
+                          className="vox-input"
+                          style={{ fontSize: "0.8rem", padding: "6px 10px" }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Voting Options */}
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
                   <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)" }}>
-                    Voting Options (Min 2, Max 10) *
+                    Voting Options {(editingPoll.total_votes || 0) > 0 ? "(Locked - Ballots Cast)" : "(Min 2, Max 10) *"}
                   </label>
                   <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                    {editForm.options.length} options defined
+                    {editForm.options.length} options
                   </span>
                 </div>
 
@@ -1646,9 +2264,15 @@ export const AdminPortal = ({ navigate }) => {
                         onChange={(e) => handleEditOptionChange(i, e.target.value)}
                         placeholder={`Option ${i + 1}`}
                         className="vox-input"
-                        style={{ flex: 1 }}
+                        style={{
+                          flex: 1,
+                          opacity: (editingPoll.total_votes || 0) > 0 ? 0.7 : 1,
+                          cursor: (editingPoll.total_votes || 0) > 0 ? "not-allowed" : "text",
+                          backgroundColor: (editingPoll.total_votes || 0) > 0 ? "rgba(255,255,255,0.02)" : undefined
+                        }}
+                        disabled={(editingPoll.total_votes || 0) > 0}
                       />
-                      {editForm.options.length > 2 && (
+                      {(editingPoll.total_votes || 0) === 0 && editForm.options.length > 2 && (
                         <button
                           type="button"
                           onClick={() => removeEditOptionField(i)}
@@ -1670,7 +2294,7 @@ export const AdminPortal = ({ navigate }) => {
                   ))}
                 </div>
 
-                {editForm.options.length < 10 && (
+                {(editingPoll.total_votes || 0) === 0 && editForm.options.length < 10 && (
                   <button
                     type="button"
                     onClick={addEditOptionField}
@@ -1841,6 +2465,112 @@ export const AdminPortal = ({ navigate }) => {
                 />
               </div>
 
+              {/* Selection Type & Max Selections */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)", marginBottom: "6px" }}>
+                    Selection Type
+                  </label>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button
+                      type="button"
+                      onClick={() => setQuickCreateForm({ ...quickCreateForm, selectionType: "single" })}
+                      style={{
+                        flex: 1,
+                        padding: "8px",
+                        borderRadius: "8px",
+                        fontSize: "0.8rem",
+                        fontWeight: quickCreateForm.selectionType === "single" ? 700 : 500,
+                        background: quickCreateForm.selectionType === "single" ? "rgba(6, 182, 212, 0.25)" : "rgba(255,255,255,0.04)",
+                        border: quickCreateForm.selectionType === "single" ? "1px solid #06b6d4" : "1px solid var(--border-subtle)",
+                        color: quickCreateForm.selectionType === "single" ? "#22d3ee" : "#fff",
+                        cursor: "pointer"
+                      }}
+                    >
+                      Single Choice
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setQuickCreateForm({ ...quickCreateForm, selectionType: "multiple" })}
+                      style={{
+                        flex: 1,
+                        padding: "8px",
+                        borderRadius: "8px",
+                        fontSize: "0.8rem",
+                        fontWeight: quickCreateForm.selectionType === "multiple" ? 700 : 500,
+                        background: quickCreateForm.selectionType === "multiple" ? "rgba(6, 182, 212, 0.25)" : "rgba(255,255,255,0.04)",
+                        border: quickCreateForm.selectionType === "multiple" ? "1px solid #06b6d4" : "1px solid var(--border-subtle)",
+                        color: quickCreateForm.selectionType === "multiple" ? "#22d3ee" : "#fff",
+                        cursor: "pointer"
+                      }}
+                    >
+                      Multi-Choice
+                    </button>
+                  </div>
+                </div>
+
+                {quickCreateForm.selectionType === "multiple" ? (
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)", marginBottom: "6px" }}>
+                      Max Choices Allowed
+                    </label>
+                    <input
+                      type="number"
+                      min="2"
+                      max={quickCreateForm.options.length}
+                      value={quickCreateForm.maxSelections}
+                      onChange={(e) => setQuickCreateForm({ ...quickCreateForm, maxSelections: Math.max(2, Math.min(quickCreateForm.options.length, Number(e.target.value))) })}
+                      className="vox-input"
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)", marginBottom: "6px" }}>
+                      Ballot Mode
+                    </label>
+                    <div style={{ padding: "8px 12px", background: "rgba(255,255,255,0.02)", border: "1px solid var(--border-subtle)", borderRadius: "8px", fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                      1 Choice per Voter
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Poll Visibility & Result Visibility */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)", marginBottom: "6px" }}>
+                    Poll Visibility
+                  </label>
+                  <select
+                    value={quickCreateForm.visibility}
+                    onChange={(e) => setQuickCreateForm({ ...quickCreateForm, visibility: e.target.value })}
+                    className="vox-input"
+                    style={{ background: "#0b0e20" }}
+                  >
+                    <option value="public">Public (All Users)</option>
+                    <option value="restricted">Restricted (Designated Groups)</option>
+                    <option value="private">Private (Invite Only)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)", marginBottom: "6px" }}>
+                    Result Visibility
+                  </label>
+                  <select
+                    value={quickCreateForm.resultVisibility}
+                    onChange={(e) => setQuickCreateForm({ ...quickCreateForm, resultVisibility: e.target.value })}
+                    className="vox-input"
+                    style={{ background: "#0b0e20" }}
+                  >
+                    <option value="realtime">Real-time (Live percentage bar)</option>
+                    <option value="after_vote">After Voting (Hidden until vote cast)</option>
+                    <option value="after_close">After Poll Closes Only</option>
+                    <option value="never">Never (Admin / Internal Only)</option>
+                  </select>
+                </div>
+              </div>
+
               {/* Session Duration: 25 min to 2 hrs / 120 min */}
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", flexWrap: "wrap", gap: "6px" }}>
@@ -1896,6 +2626,93 @@ export const AdminPortal = ({ navigate }) => {
                       {p.label}
                     </button>
                   ))}
+                </div>
+
+                {/* Proximity Boundary Warning */}
+                {(() => {
+                  const warn = getDurationWarning(quickCreateForm.duration, quickCreateForm.isEscalated);
+                  if (!warn) return null;
+                  return (
+                    <div style={{
+                      marginTop: "8px",
+                      padding: "8px 12px",
+                      borderRadius: "8px",
+                      fontSize: "0.78rem",
+                      background: warn.type === "escalation" ? "rgba(168, 85, 247, 0.12)" : "rgba(245, 158, 11, 0.12)",
+                      border: warn.type === "escalation" ? "1px solid rgba(168, 85, 247, 0.3)" : "1px solid rgba(245, 158, 11, 0.3)",
+                      color: warn.type === "escalation" ? "#c084fc" : "#fbbf24",
+                    }}>
+                      {warn.text}
+                    </div>
+                  );
+                })()}
+
+                {/* Escalation Override Drawer */}
+                <div style={{
+                  background: "rgba(255, 255, 255, 0.02)",
+                  border: "1px dashed rgba(255, 255, 255, 0.15)",
+                  borderRadius: "10px",
+                  padding: "12px",
+                  marginTop: "12px"
+                }}>
+                  <div
+                    onClick={() => setQuickCreateForm({ ...quickCreateForm, isEscalated: !quickCreateForm.isEscalated })}
+                    style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "0.8rem", fontWeight: 600, color: quickCreateForm.isEscalated ? "#c084fc" : "var(--text-dim)" }}>
+                      <Key size={14} /> Admin Escalation Override (&lt; 25m or &gt; 120m)
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={quickCreateForm.isEscalated}
+                      onChange={(e) => setQuickCreateForm({ ...quickCreateForm, isEscalated: e.target.checked })}
+                      style={{ cursor: "pointer" }}
+                    />
+                  </div>
+
+                  {quickCreateForm.isEscalated && (
+                    <div style={{ marginTop: "10px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "4px" }}>
+                          Custom Duration (Minutes)
+                        </label>
+                        <input
+                          type="number"
+                          value={quickCreateForm.duration}
+                          onChange={(e) => setQuickCreateForm({ ...quickCreateForm, duration: Number(e.target.value) })}
+                          placeholder="e.g. 15 or 180"
+                          className="vox-input"
+                          style={{ fontSize: "0.8rem", padding: "6px 10px", width: "120px" }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "4px" }}>
+                          Authorization Code (VOXENTRA_OVERRIDE_AUTH)
+                        </label>
+                        <input
+                          type="password"
+                          value={quickCreateForm.escalationCode}
+                          onChange={(e) => setQuickCreateForm({ ...quickCreateForm, escalationCode: e.target.value })}
+                          placeholder="VOXENTRA_OVERRIDE_AUTH"
+                          className="vox-input"
+                          style={{ fontSize: "0.8rem", padding: "6px 10px" }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "4px" }}>
+                          Justification / Business Case
+                        </label>
+                        <input
+                          type="text"
+                          value={quickCreateForm.escalationReason}
+                          onChange={(e) => setQuickCreateForm({ ...quickCreateForm, escalationReason: e.target.value })}
+                          placeholder="e.g. Emergency platform poll authorized by director"
+                          className="vox-input"
+                          style={{ fontSize: "0.8rem", padding: "6px 10px" }}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1987,6 +2804,226 @@ export const AdminPortal = ({ navigate }) => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* AUDIT TRAIL HISTORY MODAL */}
+      {/* ======================================================== */}
+      {auditModalOpen && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0, 0, 0, 0.85)",
+          backdropFilter: "blur(10px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1100,
+          padding: "20px",
+        }}>
+          <div className="glass-panel" style={{
+            maxWidth: "750px",
+            width: "100%",
+            maxHeight: "90vh",
+            overflowY: "auto",
+            padding: "32px",
+            border: "1px solid rgba(139, 92, 246, 0.35)",
+            boxShadow: "0 0 50px rgba(139, 92, 246, 0.2)",
+            position: "relative",
+          }}>
+            {/* Modal Header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "24px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <div style={{
+                  width: "40px",
+                  height: "40px",
+                  borderRadius: "12px",
+                  background: "linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}>
+                  <History size={22} color="#ffffff" />
+                </div>
+                <div>
+                  <h2 style={{ fontSize: "1.3rem", fontWeight: 800, color: "#ffffff", margin: 0 }}>
+                    Administrative Audit Trail
+                  </h2>
+                  <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", margin: "3px 0 0 0" }}>
+                    Immutable modification history for: <span style={{ color: "#c084fc", fontWeight: 600 }}>{auditPoll?.title || "Poll"}</span>
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setAuditModalOpen(false);
+                  setAuditPoll(null);
+                  setAuditLogs([]);
+                }}
+                style={{
+                  background: "rgba(255, 255, 255, 0.05)",
+                  border: "1px solid var(--border-subtle)",
+                  color: "var(--text-muted)",
+                  borderRadius: "8px",
+                  padding: "6px",
+                  cursor: "pointer",
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Content */}
+            {auditLoading ? (
+              <div style={{ padding: "40px", textAlign: "center", color: "var(--text-muted)" }}>
+                <RefreshCw size={24} className="spin" style={{ margin: "0 auto 12px" }} />
+                <p>Retrieving immutable audit logs...</p>
+              </div>
+            ) : auditLogs.length === 0 ? (
+              <div style={{
+                padding: "36px",
+                textAlign: "center",
+                background: "rgba(255, 255, 255, 0.02)",
+                borderRadius: "12px",
+                border: "1px dashed var(--border-subtle)"
+              }}>
+                <History size={32} style={{ color: "var(--text-muted)", margin: "0 auto 10px" }} />
+                <p style={{ color: "var(--text-dim)", fontWeight: 600, margin: 0 }}>No administrative modifications recorded yet.</p>
+                <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", margin: "4px 0 0" }}>
+                  All updates to duration, answer options, and settings will appear in this timeline.
+                </p>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                {auditLogs.map((log, idx) => (
+                  <div
+                    key={log.id || idx}
+                    style={{
+                      background: "rgba(255, 255, 255, 0.03)",
+                      border: "1px solid rgba(255, 255, 255, 0.08)",
+                      borderRadius: "12px",
+                      padding: "16px 20px",
+                      position: "relative",
+                      transition: "border-color 0.2s",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", flexWrap: "wrap", gap: "8px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <span style={{
+                          fontSize: "0.75rem",
+                          fontWeight: 800,
+                          padding: "3px 10px",
+                          borderRadius: "6px",
+                          letterSpacing: "0.04em",
+                          background: log.action?.includes("DURATION")
+                            ? "rgba(56, 189, 248, 0.15)"
+                            : log.action?.includes("CREATED")
+                            ? "rgba(52, 211, 153, 0.15)"
+                            : "rgba(168, 85, 247, 0.15)",
+                          border: log.action?.includes("DURATION")
+                            ? "1px solid rgba(56, 189, 248, 0.35)"
+                            : log.action?.includes("CREATED")
+                            ? "1px solid rgba(52, 211, 153, 0.35)"
+                            : "1px solid rgba(168, 85, 247, 0.35)",
+                          color: log.action?.includes("DURATION")
+                            ? "#38bdf8"
+                            : log.action?.includes("CREATED")
+                            ? "#34d399"
+                            : "#c084fc",
+                        }}>
+                          {log.action}
+                        </span>
+
+                        {log.is_escalated && (
+                          <span style={{
+                            fontSize: "0.72rem",
+                            fontWeight: 700,
+                            padding: "2px 8px",
+                            borderRadius: "6px",
+                            background: "rgba(239, 68, 68, 0.15)",
+                            border: "1px solid rgba(239, 68, 68, 0.35)",
+                            color: "#f87171",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "4px"
+                          }}>
+                            <Key size={12} /> Escalation Override
+                          </span>
+                        )}
+                      </div>
+
+                      <div style={{ fontSize: "0.76rem", color: "var(--text-muted)", textAlign: "right" }}>
+                        <div>{new Date(log.timestamp).toLocaleString()} (Local)</div>
+                        <div style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.4)" }}>{new Date(log.timestamp).toISOString()} (UTC)</div>
+                      </div>
+                    </div>
+
+                    {/* Actor Details */}
+                    <div style={{ fontSize: "0.82rem", color: "var(--text-dim)", marginBottom: "8px" }}>
+                      <span style={{ fontWeight: 600, color: "#fff" }}>{log.admin_name || "Admin"}</span>
+                      {log.admin_email && <span style={{ color: "var(--text-muted)" }}> ({log.admin_email})</span>}
+                    </div>
+
+                    {/* Log Details */}
+                    <div style={{ fontSize: "0.85rem", color: "var(--text-main)", marginBottom: log.old_value || log.new_value ? "10px" : "0" }}>
+                      {log.details}
+                    </div>
+
+                    {/* Value Changes (Old vs New) */}
+                    {(log.old_value || log.new_value) && (
+                      <div style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "12px",
+                        background: "rgba(0, 0, 0, 0.3)",
+                        padding: "8px 12px",
+                        borderRadius: "8px",
+                        fontSize: "0.8rem",
+                        fontFamily: "monospace"
+                      }}>
+                        <span style={{ color: "#f87171" }}>- {log.old_value || "None"}</span>
+                        <ArrowRight size={14} style={{ color: "var(--text-muted)" }} />
+                        <span style={{ color: "#34d399" }}>+ {log.new_value || "None"}</span>
+                      </div>
+                    )}
+
+                    {/* Escalation Justification */}
+                    {log.is_escalated && log.escalation_reason && (
+                      <div style={{
+                        marginTop: "8px",
+                        fontSize: "0.78rem",
+                        color: "#fca5a5",
+                        background: "rgba(239, 68, 68, 0.08)",
+                        padding: "6px 10px",
+                        borderRadius: "6px"
+                      }}>
+                        <strong>Justification:</strong> {log.escalation_reason}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Close Button */}
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "24px", borderTop: "1px solid var(--border-subtle)", paddingTop: "16px" }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuditModalOpen(false);
+                  setAuditPoll(null);
+                  setAuditLogs([]);
+                }}
+                className="btn-vox-secondary"
+                style={{ padding: "8px 20px" }}
+              >
+                Close Audit Trail
+              </button>
+            </div>
           </div>
         </div>
       )}

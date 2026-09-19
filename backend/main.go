@@ -69,7 +69,7 @@ func main() {
 		{
 			polls.GET("", pollController.GetPolls)
 			polls.GET("/active", pollController.GetActivePoll)
-			polls.GET("/:id", pollController.GetPoll)
+			polls.GET("/:id", middleware.OptionalAuth(cfg.JWTSecret), pollController.GetPoll)
 			polls.POST("/:id/reaction", pollController.ReactToPoll)
 			polls.POST("/referral/:source", pollController.TrackReferral)
 
@@ -110,6 +110,7 @@ func main() {
 			admin.PATCH("/polls/:id/pause", pollController.AdminPausePoll)
 			admin.PATCH("/polls/:id/resume", pollController.AdminResumePoll)
 			admin.PATCH("/polls/:id/end", pollController.AdminEndPoll)
+			admin.GET("/polls/:id/audit-logs", pollController.GetPollAuditLogs)
 
 			// Analytics Dashboard
 			admin.GET("/analytics", pollController.AdminGetAnalytics)

@@ -375,8 +375,199 @@ async function runSuite() {
   });
   assertCheck('Admin Permanent Poll Deletion', res.status === 200, 'Poll purged');
 
-  // 13. Frontend Service Verification
-  console.log('\n--- 13. Frontend Dev Server Availability ---');
+  // 13. Zero-Vote Option Immutability Guard Verification
+  console.log('\n--- 13. Zero-Vote Option Immutability Guard Verification ---');
+  const guardPollReq = {
+    title: `Immutability Test Poll ${timestamp}`,
+    category: 'Engineering',
+    duration_minutes: 45,
+    options: ['Choice 1', 'Choice 2', 'Choice 3']
+  };
+  res = await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: '/api/admin/polls',
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` }
+  }, guardPollReq);
+  const guardPollId = res.data.id || res.data.poll?.id;
+  assertCheck('Admin Creates Poll for Immutability Testing', res.status === 201 && guardPollId, `Poll ID: ${guardPollId}`);
+
+  // While total_votes === 0, options can be freely modified
+  res = await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: `/api/admin/polls/${guardPollId}`,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` }
+  }, {
+    title: `Immutability Test Poll ${timestamp}`,
+    duration_minutes: 45,
+    options: ['Choice 1 Modified', 'Choice 2 Modified', 'Choice 3 Modified', 'Choice 4 Added']
+  });
+  assertCheck('Options Successfully Modified When 0 Votes Cast (200)', res.status === 200 && res.data.options?.length === 4, '4 modified options saved');
+  const guardOptions = res.data.options;
+
+  // Register a distinct voter and cast a ballot
+  const voter2 = {
+    username: `voter2_${timestamp}`,
+    email: `voter2_${timestamp}@example.com`,
+    password: 'SecurePassword2026!'
+  };
+  res = await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: '/api/auth/register',
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  }, voter2);
+  const voter2Token = res.data.token;
+
+  res = await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: `/api/polls/${guardPollId}/vote`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${voter2Token}` }
+  }, { option_id: guardOptions[0].id });
+  assertCheck('Ballot Cast on Poll (Total Votes = 1)', res.status === 200, 'Vote recorded');
+
+  // Now attempt to modify options after vote cast -> MUST BE REJECTED WITH 400
+  res = await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: `/api/admin/polls/${guardPollId}`,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` }
+  }, {
+    title: `Attempted Option Edit Post-Vote ${timestamp}`,
+    duration_minutes: 45,
+    options: ['Tampered Choice A', 'Tampered Choice B']
+  });
+  assertCheck('Zero-Vote Guard Rejects Option Modification After Ballot Cast (400)', res.status === 400 && res.data.error?.includes('Answer options cannot be modified'), res.data.error);
+
+  // Safe updates to title and duration without altering options must succeed
+  res = await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: `/api/admin/polls/${guardPollId}`,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` }
+  }, {
+    title: `Allowed Title Update Post-Vote ${timestamp}`,
+    duration_minutes: 60
+  });
+  assertCheck('Title & Duration Update Allowed While Options Preserved (200)', res.status === 200 && res.data.title?.includes('Allowed Title Update'), `New duration: ${res.data.duration_minutes}m`);
+
+  // 14. Escalation Override Workflow (<25m or >120m)
+  console.log('\n--- 14. Admin Escalation Override Workflow ---');
+  res = await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: '/api/admin/polls',
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` }
+  }, {
+    title: `Flash Executive Poll ${timestamp}`,
+    category: 'General',
+    duration_minutes: 10, // < 25m
+    options: ['Yes', 'No'],
+    escalation_code: 'VOXENTRA_OVERRIDE_AUTH',
+    escalation_reason: 'Emergency executive decision vote authorized by director'
+  });
+  const escalatedPollId = res.data.id || res.data.poll?.id;
+  assertCheck('Escalation Override Allows 10m Flash Poll (201)', res.status === 201 && escalatedPollId, `Escalated Poll ID: ${escalatedPollId}, Duration: 10m`);
+
+  // 15. Multi-Selection Voting & Result Visibility Privacy Shield
+  console.log('\n--- 15. Multi-Selection Voting & Result Visibility ---');
+  res = await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: '/api/admin/polls',
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` }
+  }, {
+    title: `Multi-Choice Tech Stack ${timestamp}`,
+    category: 'Web Development',
+    duration_minutes: 60,
+    selection_type: 'multiple',
+    max_selections: 2,
+    result_visibility: 'after_vote',
+    options: ['Go', 'TypeScript', 'Rust', 'Python']
+  });
+  const multiPollId = res.data.id || res.data.poll?.id;
+  const multiOptions = res.data.options || res.data.poll?.options;
+  assertCheck('Admin Creates Multi-Selection Poll with after_vote Privacy (201)', res.status === 201 && multiPollId, `Selection: multiple (max 2), Visibility: after_vote`);
+
+  // Fetch poll before voting -> results must be shielded
+  res = await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: `/api/polls/${multiPollId}`,
+    method: 'GET'
+  });
+  assertCheck('Results Privacy Shield Active Before Voting', res.status === 200 && res.data.poll?.results_hidden === true && res.data.poll?.options[0].votes === 0, `Shield message: "${res.data.poll?.results_reveal_condition}"`);
+
+  // Register voter 3 and vote with 2 selections
+  const voter3 = {
+    username: `voter3_${timestamp}`,
+    email: `voter3_${timestamp}@example.com`,
+    password: 'SecurePassword2026!'
+  };
+  res = await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: '/api/auth/register',
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  }, voter3);
+  const voter3Token = res.data.token;
+
+  // Attempt voting for 3 options when max is 2 -> reject
+  res = await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: `/api/polls/${multiPollId}/vote`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${voter3Token}` }
+  }, { option_ids: [multiOptions[0].id, multiOptions[1].id, multiOptions[2].id] });
+  assertCheck('Reject Multi-Vote Exceeding Max Selections (400)', res.status === 400, res.data.error);
+
+  // Cast valid vote with 2 selections
+  res = await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: `/api/polls/${multiPollId}/vote`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${voter3Token}` }
+  }, { option_ids: [multiOptions[0].id, multiOptions[1].id] });
+  assertCheck('Cast Valid Multi-Selection Ballot (2 choices)', res.status === 200, res.data.message);
+
+  // Fetch poll as authenticated voter 3 -> results must now be revealed!
+  res = await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: `/api/polls/${multiPollId}`,
+    method: 'GET',
+    headers: { 'Authorization': `Bearer ${voter3Token}` }
+  });
+  assertCheck('Results Revealed to Voter Post-Ballot', res.status === 200 && res.data.poll?.results_hidden === false && res.data.has_voted === true, `Results revealed, total votes: ${res.data.poll?.total_votes}`);
+
+  // 16. Administrative Audit Trail Retrieval
+  console.log('\n--- 16. Administrative Audit Trail Verification ---');
+  res = await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: `/api/admin/polls/${guardPollId}/audit-logs`,
+    method: 'GET',
+    headers: { 'Authorization': `Bearer ${adminToken}` }
+  });
+  assertCheck('Fetch Poll Administrative Audit Trail', res.status === 200 && Array.isArray(res.data.audit_logs) && res.data.audit_logs.length >= 2, `Retrieved ${res.data.audit_logs.length} audit records`);
+  const durLog = res.data.audit_logs.find(l => l.action?.toLowerCase().includes('duration') || l.action?.toLowerCase().includes('update'));
+  assertCheck('Audit Log Contains Action and Old/New Values', !!durLog && (durLog.admin_name || durLog.admin_email), `Action: ${durLog?.action}, Old: "${durLog?.old_value || durLog?.old_duration}", New: "${durLog?.new_value || durLog?.new_duration}"`);
+
+  // 17. Frontend Service Verification
+  console.log('\n--- 17. Frontend Dev Server Availability ---');
   res = await request({ hostname: '127.0.0.1', port: 5173, path: '/', method: 'GET' });
   assertCheck('Frontend HTTP 200 OK', res.status === 200 && res.headers['content-type']?.includes('text/html'), 'Vite serving Single Page Application');
 

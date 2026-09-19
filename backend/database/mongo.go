@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -38,10 +39,14 @@ type Storage interface {
 	UpdatePollVotes(ctx context.Context, pollID primitive.ObjectID, optionVotes map[string]int64, totalVotes int64) error
 
 	// Voting & Reactions
-	RecordVote(ctx context.Context, userID primitive.ObjectID, pollID primitive.ObjectID, optionID string, referralSource string) (*models.LivePollUpdate, error)
+	RecordVote(ctx context.Context, userID primitive.ObjectID, pollID primitive.ObjectID, optionID string, optionIDs []string, referralSource string) (*models.LivePollUpdate, error)
 	HasUserVoted(ctx context.Context, userID primitive.ObjectID, pollID primitive.ObjectID) (bool, string, error)
 	RecordPollReaction(ctx context.Context, pollID primitive.ObjectID, reactionType string) (int64, int64, error)
 	IncrementPollViews(ctx context.Context, pollID primitive.ObjectID) error
+
+	// Audit Logs
+	RecordAuditLog(ctx context.Context, log *models.AuditLog) error
+	GetAuditLogsByPollID(ctx context.Context, pollID primitive.ObjectID) ([]models.AuditLog, error)
 
 	// Comments
 	AddComment(ctx context.Context, comment *models.Comment) error
@@ -64,14 +69,15 @@ type Storage interface {
 
 type InMemoryStorage struct {
 	mu            sync.RWMutex
-	users         map[string]models.User         // email -> User
-	usersByID     map[string]models.User         // hex ID -> User
-	polls         map[string]models.Poll         // hex ID -> Poll
-	votes         []models.VoteRecord            // list of all cast votes
-	userVotes     map[string]map[string]string   // userID -> pollID -> optionID
-	comments      []models.Comment               // list of all comments
-	gameScores    []models.GameScore             // list of all game scores
+	users         map[string]models.User          // email -> User
+	usersByID     map[string]models.User          // hex ID -> User
+	polls         map[string]models.Poll          // hex ID -> Poll
+	votes         []models.VoteRecord             // list of all cast votes
+	userVotes     map[string]map[string]string    // userID -> pollID -> optionID
+	comments      []models.Comment                // list of all comments
+	gameScores    []models.GameScore              // list of all game scores
 	referralStats map[string]*models.ReferralStat // source -> stats
+	auditLogs     []models.AuditLog               // audit logs for poll actions
 }
 
 var DB Storage
@@ -93,6 +99,7 @@ func NewInMemoryStorage() *InMemoryStorage {
 		comments:      make([]models.Comment, 0),
 		gameScores:    make([]models.GameScore, 0),
 		referralStats: make(map[string]*models.ReferralStat),
+		auditLogs:     make([]models.AuditLog, 0),
 	}
 
 	s.seedData()
@@ -331,7 +338,7 @@ func (s *InMemoryStorage) CreatePoll(ctx context.Context, poll *models.Poll) err
 	defer s.mu.Unlock()
 
 	poll.ID = primitive.NewObjectID()
-	now := time.Now()
+	now := time.Now().UTC()
 	poll.CreatedAt = now
 	poll.IsActive = true
 	poll.IsArchived = false
@@ -340,11 +347,29 @@ func (s *InMemoryStorage) CreatePoll(ctx context.Context, poll *models.Poll) err
 	poll.TimerStart = &now
 
 	if poll.DurationMinutes <= 0 {
-		poll.DurationMinutes = 120 // 2 hours default
+		poll.DurationMinutes = 60 // 60 minutes default suggested duration
 	}
 	timerEnd := now.Add(time.Duration(poll.DurationMinutes) * time.Minute)
 	poll.TimerEnd = &timerEnd
 
+	if poll.SelectionType == "" {
+		poll.SelectionType = "single"
+	}
+	if poll.SelectionType == "multiple" && poll.MaxSelections < 2 {
+		poll.MaxSelections = len(poll.Options)
+	}
+	if poll.Visibility == "" {
+		poll.Visibility = "public"
+	}
+	if len(poll.AllowedUserGroups) == 0 {
+		poll.AllowedUserGroups = []string{"all"}
+	}
+	if poll.ResultVisibility == "" {
+		poll.ResultVisibility = "realtime"
+	}
+	if poll.Timezone == "" {
+		poll.Timezone = "UTC"
+	}
 	if poll.EntryRequirement == "" {
 		poll.EntryRequirement = "Free / Open to All"
 	}
@@ -420,6 +445,34 @@ func (s *InMemoryStorage) UpdatePoll(ctx context.Context, updated *models.Poll) 
 		return errors.New("poll not found")
 	}
 
+	// CRITICAL RULE: Options can ONLY be added, removed, or modified if no votes have been cast!
+	if updated.Options != nil && len(updated.Options) > 0 {
+		optionsChanged := false
+		if len(existing.Options) != len(updated.Options) {
+			optionsChanged = true
+		} else {
+			for i := range existing.Options {
+				if existing.Options[i].Text != updated.Options[i].Text || existing.Options[i].ID != updated.Options[i].ID {
+					optionsChanged = true
+					break
+				}
+			}
+		}
+
+		if optionsChanged {
+			if existing.TotalVotes > 0 {
+				return errors.New("cannot add, remove, or modify answer options after votes have already been cast")
+			}
+			existing.Options = updated.Options
+			var total int64 = 0
+			for _, o := range existing.Options {
+				total += o.Votes
+			}
+			existing.TotalVotes = total
+			calculatePollPercentages(&existing)
+		}
+	}
+
 	existing.Title = updated.Title
 	existing.Description = updated.Description
 	existing.Category = updated.Category
@@ -427,19 +480,43 @@ func (s *InMemoryStorage) UpdatePoll(ctx context.Context, updated *models.Poll) 
 	if updated.Status != "" {
 		existing.Status = updated.Status
 	}
-	if updated.DurationMinutes > 0 {
-		existing.DurationMinutes = updated.DurationMinutes
-		timerEnd := time.Now().Add(time.Duration(updated.DurationMinutes) * time.Minute)
-		existing.TimerEnd = &timerEnd
+	if updated.SelectionType != "" {
+		existing.SelectionType = updated.SelectionType
 	}
-	if updated.Options != nil && len(updated.Options) > 0 {
-		existing.Options = updated.Options
-		var total int64 = 0
-		for _, o := range existing.Options {
-			total += o.Votes
+	if updated.MaxSelections > 0 {
+		existing.MaxSelections = updated.MaxSelections
+	}
+	if updated.Visibility != "" {
+		existing.Visibility = updated.Visibility
+	}
+	if updated.AllowedUserGroups != nil {
+		existing.AllowedUserGroups = updated.AllowedUserGroups
+	}
+	if updated.ResultVisibility != "" {
+		existing.ResultVisibility = updated.ResultVisibility
+	}
+	if updated.Timezone != "" {
+		existing.Timezone = updated.Timezone
+	}
+	if updated.IsEscalated {
+		existing.IsEscalated = true
+		existing.EscalationReason = updated.EscalationReason
+	}
+
+	// Active Poll Duration Edge Case & Dynamic Recalculation
+	if updated.DurationMinutes > 0 && updated.DurationMinutes != existing.DurationMinutes {
+		if existing.TimerStart != nil {
+			newTimerEnd := existing.TimerStart.Add(time.Duration(updated.DurationMinutes) * time.Minute)
+			if newTimerEnd.Before(time.Now()) {
+				elapsedMins := int(time.Since(*existing.TimerStart).Minutes())
+				return fmt.Errorf("duration (%d min) cannot be shorter than the time already elapsed (%d min)", updated.DurationMinutes, elapsedMins)
+			}
+			existing.TimerEnd = &newTimerEnd
+		} else {
+			timerEnd := time.Now().Add(time.Duration(updated.DurationMinutes) * time.Minute)
+			existing.TimerEnd = &timerEnd
 		}
-		existing.TotalVotes = total
-		calculatePollPercentages(&existing)
+		existing.DurationMinutes = updated.DurationMinutes
 	}
 
 	s.polls[updated.ID.Hex()] = existing
@@ -578,8 +655,8 @@ func (s *InMemoryStorage) UpdatePollVotes(ctx context.Context, pollID primitive.
 	return nil
 }
 
-// Voting Implementation: One Vote Per Registered User
-func (s *InMemoryStorage) RecordVote(ctx context.Context, userID primitive.ObjectID, pollID primitive.ObjectID, optionID string, referralSource string) (*models.LivePollUpdate, error) {
+// Voting Implementation: One Vote Per Registered User (Supports Single & Multiple Selections)
+func (s *InMemoryStorage) RecordVote(ctx context.Context, userID primitive.ObjectID, pollID primitive.ObjectID, optionID string, optionIDs []string, referralSource string) (*models.LivePollUpdate, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -610,31 +687,69 @@ func (s *InMemoryStorage) RecordVote(ctx context.Context, userID primitive.Objec
 		s.userVotes[userHex] = make(map[string]string)
 	}
 
-	// Find and increment selected option
-	optionFound := false
-	for i, opt := range poll.Options {
-		if opt.ID == optionID {
-			poll.Options[i].Votes++
-			poll.TotalVotes++
-			optionFound = true
-			break
+	// Consolidate and validate selected options
+	var selected []string
+	if len(optionIDs) > 0 {
+		selected = optionIDs
+	} else if optionID != "" {
+		selected = []string{optionID}
+	}
+
+	if len(selected) == 0 {
+		return nil, errors.New("please select at least one option")
+	}
+
+	// Check selection limits based on poll.SelectionType
+	if poll.SelectionType == "multiple" {
+		max := poll.MaxSelections
+		if max < 2 {
+			max = len(poll.Options)
+		}
+		if len(selected) > max {
+			return nil, fmt.Errorf("you may select at most %d options for this poll", max)
+		}
+	} else {
+		if len(selected) > 1 {
+			return nil, errors.New("this poll only permits a single option selection")
 		}
 	}
 
-	if !optionFound {
-		return nil, errors.New("invalid poll option selected")
+	// Prevent duplicate option IDs in the same ballot
+	uniqueSelected := make(map[string]bool)
+	for _, id := range selected {
+		if uniqueSelected[id] {
+			return nil, errors.New("duplicate option selections are not allowed")
+		}
+		uniqueSelected[id] = true
 	}
 
-	// Record vote registry
-	s.userVotes[userHex][pollHex] = optionID
-	s.votes = append(s.votes, models.VoteRecord{
-		ID:             primitive.NewObjectID(),
-		UserID:         userID,
-		PollID:         pollID,
-		OptionID:       optionID,
-		ReferralSource: referralSource,
-		CreatedAt:      time.Now(),
-	})
+	// Validate options and increment votes
+	for optID := range uniqueSelected {
+		found := false
+		for i, opt := range poll.Options {
+			if opt.ID == optID {
+				poll.Options[i].Votes++
+				poll.TotalVotes++
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("invalid option selected: %s", optID)
+		}
+
+		s.votes = append(s.votes, models.VoteRecord{
+			ID:             primitive.NewObjectID(),
+			UserID:         userID,
+			PollID:         pollID,
+			OptionID:       optID,
+			ReferralSource: referralSource,
+			CreatedAt:      time.Now().UTC(),
+		})
+	}
+
+	// Record vote registry (comma-separated list if multiple)
+	s.userVotes[userHex][pollHex] = strings.Join(selected, ",")
 
 	// Track referral analytics
 	if referralSource != "" {
@@ -664,13 +779,49 @@ func (s *InMemoryStorage) RecordVote(ctx context.Context, userID primitive.Objec
 		optionVotes[opt.ID] = opt.Votes
 	}
 
+	lastVoted := selected[0]
 	return &models.LivePollUpdate{
 		PollID:          pollHex,
 		TotalVotes:      poll.TotalVotes,
 		OptionVotes:     optionVotes,
-		LastVotedOption: optionID,
+		LastVotedOption: lastVoted,
 		Timestamp:       time.Now().Unix(),
 	}, nil
+}
+
+// Audit Logging Implementations
+func (s *InMemoryStorage) RecordAuditLog(ctx context.Context, logEntry *models.AuditLog) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if logEntry.ID.IsZero() {
+		logEntry.ID = primitive.NewObjectID()
+	}
+	if logEntry.Timestamp.IsZero() {
+		logEntry.Timestamp = time.Now().UTC()
+	}
+	if logEntry.Timezone == "" {
+		logEntry.Timezone = "UTC"
+	}
+	s.auditLogs = append(s.auditLogs, *logEntry)
+	return nil
+}
+
+func (s *InMemoryStorage) GetAuditLogsByPollID(ctx context.Context, pollID primitive.ObjectID) ([]models.AuditLog, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var results []models.AuditLog
+	for _, l := range s.auditLogs {
+		if l.PollID == pollID {
+			results = append(results, l)
+		}
+	}
+	// Sort newest first
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Timestamp.After(results[j].Timestamp)
+	})
+	return results, nil
 }
 
 func (s *InMemoryStorage) HasUserVoted(ctx context.Context, userID primitive.ObjectID, pollID primitive.ObjectID) (bool, string, error) {
