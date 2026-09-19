@@ -423,6 +423,10 @@ func (s *InMemoryStorage) UpdatePoll(ctx context.Context, updated *models.Poll) 
 	existing.Title = updated.Title
 	existing.Description = updated.Description
 	existing.Category = updated.Category
+	existing.IsActive = updated.IsActive
+	if updated.Status != "" {
+		existing.Status = updated.Status
+	}
 	if updated.DurationMinutes > 0 {
 		existing.DurationMinutes = updated.DurationMinutes
 		timerEnd := time.Now().Add(time.Duration(updated.DurationMinutes) * time.Minute)
@@ -430,6 +434,12 @@ func (s *InMemoryStorage) UpdatePoll(ctx context.Context, updated *models.Poll) 
 	}
 	if updated.Options != nil && len(updated.Options) > 0 {
 		existing.Options = updated.Options
+		var total int64 = 0
+		for _, o := range existing.Options {
+			total += o.Votes
+		}
+		existing.TotalVotes = total
+		calculatePollPercentages(&existing)
 	}
 
 	s.polls[updated.ID.Hex()] = existing

@@ -43,7 +43,7 @@ func (gc *GameController) GetGlobalLeaderboard(c *gin.Context) {
 
 // Public: Get game-specific leaderboard
 func (gc *GameController) GetGameLeaderboard(c *gin.Context) {
-	gameName := c.DefaultQuery("game", "trivia_rush")
+	gameName := c.DefaultQuery("game", "color_match")
 	leaderboard, err := database.DB.GetGameLeaderboard(c.Request.Context(), gameName)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch game leaderboard"})
@@ -53,7 +53,7 @@ func (gc *GameController) GetGameLeaderboard(c *gin.Context) {
 	c.JSON(http.StatusOK, leaderboard)
 }
 
-// Authenticated: Submit a game score (Trivia Rush or Word Blitz)
+// Authenticated: Submit a game score (Color Match or Snake Classic)
 func (gc *GameController) SubmitScore(c *gin.Context) {
 	userIDHex, exists := c.Get("userID")
 	if !exists {

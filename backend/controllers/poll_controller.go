@@ -287,6 +287,11 @@ func (p *PollController) AdminUpdatePoll(c *gin.Context) {
 	}
 	if req.IsActive != nil {
 		existing.IsActive = *req.IsActive
+		if *req.IsActive {
+			existing.Status = "active"
+		} else {
+			existing.Status = "paused"
+		}
 	}
 
 	if len(req.Options) >= 2 {
@@ -313,6 +318,8 @@ func (p *PollController) AdminUpdatePoll(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update poll"})
 		return
 	}
+
+	websocket.BroadcastEvent("poll_update", existing)
 
 	c.JSON(http.StatusOK, existing)
 }

@@ -41,6 +41,105 @@ export const AdminPortal = ({ navigate }) => {
   const [poolConfirmed, setPoolConfirmed] = useState(false);
   const [wizardError, setWizardError] = useState("");
 
+  // ==========================================
+  // EDIT POOL STATE & HANDLERS
+  // ==========================================
+  const [editingPoll, setEditingPoll] = useState(null);
+  const [editForm, setEditForm] = useState({
+    title: "",
+    category: "Artificial Intelligence",
+    description: "",
+    duration: 120,
+    isActive: true,
+    options: ["", ""],
+  });
+  const [editError, setEditError] = useState("");
+  const [editLoading, setEditLoading] = useState(false);
+
+  const handleStartEdit = (poll) => {
+    setEditingPoll(poll);
+    setEditError("");
+    const opts = poll.options && poll.options.length >= 2
+      ? poll.options.map((o) => (typeof o === "string" ? o : o.text))
+      : ["", ""];
+    setEditForm({
+      title: poll.title || "",
+      category: poll.category || "Artificial Intelligence",
+      description: poll.description || "",
+      duration: poll.duration_minutes || 60,
+      isActive: poll.is_active !== undefined ? poll.is_active : true,
+      options: opts,
+    });
+  };
+
+  const handleEditOptionChange = (idx, val) => {
+    const updated = [...editForm.options];
+    updated[idx] = val;
+    setEditForm((prev) => ({ ...prev, options: updated }));
+  };
+
+  const addEditOptionField = () => {
+    if (editForm.options.length < 10) {
+      setEditForm((prev) => ({ ...prev, options: [...prev.options, ""] }));
+    }
+  };
+
+  const removeEditOptionField = (idx) => {
+    if (editForm.options.length > 2) {
+      setEditForm((prev) => ({
+        ...prev,
+        options: prev.options.filter((_, i) => i !== idx),
+      }));
+    }
+  };
+
+  const handleSaveEdit = async (e) => {
+    e.preventDefault();
+    setEditError("");
+
+    if (!editForm.title.trim() || editForm.title.trim().length < 3) {
+      setEditError("Pool Name / Question must be at least 3 characters long");
+      return;
+    }
+
+    const cleanOpts = editForm.options.map((o) => o.trim()).filter(Boolean);
+    if (cleanOpts.length < 2) {
+      setEditError("Please provide at least 2 non-empty options");
+      return;
+    }
+
+    const unique = new Set(cleanOpts.map((o) => o.toLowerCase()));
+    if (unique.size !== cleanOpts.length) {
+      setEditError("Options must be unique (no duplicates)");
+      return;
+    }
+
+    if (Number(editForm.duration) <= 0) {
+      setEditError("Duration must be greater than 0 minutes");
+      return;
+    }
+
+    setEditLoading(true);
+    try {
+      await api.put(`/api/admin/polls/${editingPoll.id}`, {
+        title: editForm.title.trim(),
+        description: editForm.description.trim(),
+        category: editForm.category,
+        duration_minutes: Number(editForm.duration),
+        is_active: editForm.isActive,
+        options: cleanOpts,
+      });
+
+      showToast("Voting pool updated successfully!");
+      setEditingPoll(null);
+      loadAdminData();
+    } catch (err) {
+      setEditError(err.message || "Failed to update pool");
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
   // Fetch Dashboard Data
   const loadAdminData = async () => {
     if (!isAdmin) return;
@@ -486,6 +585,49 @@ export const AdminPortal = ({ navigate }) => {
       {/* ======================================================== */}
       {activeTab === "pools" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+          {/* Header Action Bar */}
+          <div style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: "12px",
+            marginBottom: "6px",
+          }}>
+            <div>
+              <h2 style={{ fontSize: "1.3rem", fontWeight: 800, color: "#ffffff", display: "flex", alignItems: "center", gap: "8px", margin: 0 }}>
+                <Layers size={20} color="#c084fc" /> Manage Voting Pools ({polls.length})
+              </h2>
+              <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", margin: "4px 0 0 0" }}>
+                Active sessions, live votes, instant status toggles, and pool configuration.
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+              <button
+                onClick={loadAdminData}
+                className="btn-vox-secondary"
+                style={{ padding: "8px 14px", fontSize: "0.82rem", display: "flex", alignItems: "center", gap: "6px" }}
+                title="Refresh pool list"
+              >
+                <RefreshCw size={14} className={loading ? "spin" : ""} /> Refresh
+              </button>
+              <button
+                onClick={() => { setActiveTab("create_pool"); setWizardStep(1); }}
+                className="btn-vox-primary"
+                style={{
+                  padding: "8px 18px",
+                  fontSize: "0.85rem",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  boxShadow: "0 0 15px rgba(139, 92, 246, 0.4)",
+                }}
+              >
+                <Plus size={16} /> Create New Pool
+              </button>
+            </div>
+          </div>
+
           {polls.length === 0 ? (
             <div className="glass-panel" style={{ padding: "40px", textAlign: "center", color: "var(--text-muted)" }}>
               No pools found. Launch one with the Create Pool Wizard!
@@ -537,6 +679,24 @@ export const AdminPortal = ({ navigate }) => {
 
                 {/* Session Control Buttons */}
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                  <button
+                    onClick={() => handleStartEdit(p)}
+                    className="btn-vox-secondary"
+                    style={{
+                      padding: "8px 14px",
+                      fontSize: "0.8rem",
+                      color: "#38bdf8",
+                      border: "1px solid rgba(56, 189, 248, 0.4)",
+                      background: "rgba(56, 189, 248, 0.08)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                    }}
+                    title="Edit pool details, category, duration & options"
+                  >
+                    <Edit2 size={14} /> Edit
+                  </button>
+
                   {p.is_active ? (
                     <button
                       onClick={() => handlePausePoll(p.id)}
@@ -1083,6 +1243,302 @@ export const AdminPortal = ({ navigate }) => {
                 </div>
               ))
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: EDIT VOTING POOL */}
+      {/* ======================================================== */}
+      {editingPoll && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: "rgba(3, 7, 18, 0.82)",
+          backdropFilter: "blur(10px)",
+          WebkitBackdropFilter: "blur(10px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 9999,
+          padding: "20px",
+        }}>
+          <div
+            className="glass-panel"
+            style={{
+              width: "100%",
+              maxWidth: "680px",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              padding: "32px",
+              borderRadius: "20px",
+              border: "1px solid rgba(56, 189, 248, 0.35)",
+              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 30px rgba(56, 189, 248, 0.2)",
+              position: "relative",
+            }}
+          >
+            {/* Modal Header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "24px", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "16px" }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "4px" }}>
+                  <div style={{
+                    width: "36px",
+                    height: "36px",
+                    borderRadius: "10px",
+                    background: "rgba(56, 189, 248, 0.15)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}>
+                    <Edit2 size={18} color="#38bdf8" />
+                  </div>
+                  <h2 style={{ fontSize: "1.35rem", fontWeight: 800, color: "#ffffff", margin: 0 }}>
+                    Edit Voting Pool
+                  </h2>
+                </div>
+                <span style={{ fontSize: "0.78rem", color: "var(--text-dim)" }}>
+                  ID: {editingPoll.id} · Created by {editingPoll.creator_name || "Admin"}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingPoll(null)}
+                style={{
+                  background: "rgba(255, 255, 255, 0.05)",
+                  border: "1px solid var(--border-subtle)",
+                  color: "var(--text-muted)",
+                  borderRadius: "8px",
+                  width: "32px",
+                  height: "32px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Error Banner */}
+            {editError && (
+              <div style={{
+                background: "rgba(239, 68, 68, 0.15)",
+                border: "1px solid rgba(239, 68, 68, 0.35)",
+                color: "#fca5a5",
+                padding: "10px 16px",
+                borderRadius: "10px",
+                fontSize: "0.85rem",
+                marginBottom: "20px",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+              }}>
+                <AlertTriangle size={16} />
+                <span>{editError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveEdit} style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+              {/* Pool Name / Title */}
+              <div>
+                <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)", marginBottom: "6px" }}>
+                  Pool Name / Voting Question *
+                </label>
+                <input
+                  type="text"
+                  value={editForm.title}
+                  onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                  placeholder="Pool Title"
+                  className="vox-input"
+                  required
+                />
+              </div>
+
+              {/* Category & Status */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)", marginBottom: "6px" }}>
+                    Category
+                  </label>
+                  <select
+                    value={editForm.category}
+                    onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
+                    className="vox-input"
+                    style={{ background: "#0b0e20" }}
+                  >
+                    <option value="Artificial Intelligence">Artificial Intelligence</option>
+                    <option value="Web Development">Web Development</option>
+                    <option value="Gaming & Esports">Gaming & Esports</option>
+                    <option value="Cloud Computing">Cloud Computing</option>
+                    <option value="Blockchain & Web3">Blockchain & Web3</option>
+                    <option value="Mobile Tech">Mobile Tech</option>
+                    <option value="General">General</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)", marginBottom: "6px" }}>
+                    Voting Session Status
+                  </label>
+                  <div
+                    onClick={() => setEditForm({ ...editForm, isActive: !editForm.isActive })}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                      padding: "10px 14px",
+                      borderRadius: "10px",
+                      background: editForm.isActive ? "rgba(16, 185, 129, 0.12)" : "rgba(239, 68, 68, 0.12)",
+                      border: editForm.isActive ? "1px solid rgba(16, 185, 129, 0.3)" : "1px solid rgba(239, 68, 68, 0.3)",
+                      cursor: "pointer",
+                      height: "44px",
+                      boxSizing: "border-box"
+                    }}
+                  >
+                    {editForm.isActive ? <ToggleRight size={22} color="#34d399" /> : <ToggleLeft size={22} color="#f87171" />}
+                    <span style={{ fontSize: "0.85rem", fontWeight: 700, color: editForm.isActive ? "#34d399" : "#f87171" }}>
+                      {editForm.isActive ? "Active (Accepting Votes)" : "Paused (Voting Locked)"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Description */}
+              <div>
+                <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)", marginBottom: "6px" }}>
+                  Description / Context
+                </label>
+                <textarea
+                  value={editForm.description}
+                  onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                  placeholder="Pool description or guidelines..."
+                  className="vox-input"
+                  rows={2}
+                />
+              </div>
+
+              {/* Duration */}
+              <div>
+                <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)", marginBottom: "6px" }}>
+                  Session Duration (Minutes)
+                </label>
+                <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                  <input
+                    type="number"
+                    min="1"
+                    value={editForm.duration}
+                    onChange={(e) => setEditForm({ ...editForm, duration: Number(e.target.value) })}
+                    className="vox-input"
+                    style={{ width: "130px" }}
+                  />
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    {[30, 60, 120, 1440].map((mins) => (
+                      <button
+                        key={mins}
+                        type="button"
+                        onClick={() => setEditForm({ ...editForm, duration: mins })}
+                        style={{
+                          background: editForm.duration === mins ? "rgba(56, 189, 248, 0.25)" : "rgba(255,255,255,0.04)",
+                          border: editForm.duration === mins ? "1px solid #38bdf8" : "1px solid var(--border-subtle)",
+                          color: editForm.duration === mins ? "#38bdf8" : "#fff",
+                          padding: "6px 12px",
+                          borderRadius: "8px",
+                          fontSize: "0.75rem",
+                          cursor: "pointer",
+                        }}
+                      >
+                        {mins < 60 ? `${mins}m` : mins === 1440 ? "24h" : `${mins / 60}h`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Voting Options */}
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                  <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)" }}>
+                    Voting Options (Min 2, Max 10) *
+                  </label>
+                  <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                    {editForm.options.length} options defined
+                  </span>
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                  {editForm.options.map((opt, i) => (
+                    <div key={i} style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                      <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text-dim)", width: "22px" }}>
+                        #{i + 1}
+                      </span>
+                      <input
+                        type="text"
+                        value={opt}
+                        onChange={(e) => handleEditOptionChange(i, e.target.value)}
+                        placeholder={`Option ${i + 1}`}
+                        className="vox-input"
+                        style={{ flex: 1 }}
+                      />
+                      {editForm.options.length > 2 && (
+                        <button
+                          type="button"
+                          onClick={() => removeEditOptionField(i)}
+                          style={{
+                            background: "rgba(239, 68, 68, 0.1)",
+                            border: "1px solid rgba(239, 68, 68, 0.3)",
+                            color: "#f87171",
+                            borderRadius: "8px",
+                            padding: "0 12px",
+                            height: "42px",
+                            cursor: "pointer",
+                          }}
+                          title="Remove option"
+                        >
+                          <X size={16} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {editForm.options.length < 10 && (
+                  <button
+                    type="button"
+                    onClick={addEditOptionField}
+                    className="btn-vox-secondary"
+                    style={{ marginTop: "12px", padding: "8px 16px", fontSize: "0.82rem", display: "flex", alignItems: "center", gap: "6px" }}
+                  >
+                    <Plus size={14} /> Add Option
+                  </button>
+                )}
+              </div>
+
+              {/* Modal Action Buttons */}
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "16px", borderTop: "1px solid var(--border-subtle)", paddingTop: "20px" }}>
+                <button
+                  type="button"
+                  onClick={() => setEditingPoll(null)}
+                  className="btn-vox-secondary"
+                  style={{ padding: "10px 20px" }}
+                  disabled={editLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-vox-primary"
+                  style={{ padding: "10px 24px", display: "flex", alignItems: "center", gap: "8px" }}
+                  disabled={editLoading}
+                >
+                  {editLoading ? <RefreshCw size={16} className="spin" /> : <Check size={16} />}
+                  {editLoading ? "Saving Changes..." : "Save Changes"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

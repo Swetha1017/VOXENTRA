@@ -53,8 +53,8 @@ Voxentra is a high-concurrency, real-time live polling, community commentary, an
    - Real-time commentary stream alongside each poll and game.
    - Registered users post timestamped reactions pushed instantly to all participants over WebSockets.
 5. **Interactive Games Arena:**
-   - **Game 1 (Trivia Rush):** Timed rapid-fire multiple-choice quiz on AI and web development with countdown timers, streak multipliers, and instant answer explanations.
-   - **Game 2 (Word Blitz):** 60-second anagram duel where players assemble valid words from letter tiles ("VOXENTRA") with live score calculation.
+   - **Game 1 (Color Match):** Rapid cognitive reflex Stroop effect test challenging players to match semantic color words against font color under a 30-second blitz timer with streak multipliers.
+   - **Game 2 (Snake Classic):** Retro arcade navigation with neon food, smooth grid collision detection, tail growth, and WASD/arrow/touch controls.
    - Integrated live chat and game-specific leaderboards.
 6. **Social Sharing & Referral Tracking:**
    - Unique shareable URLs generated for every poll and game (`?ref=...`).

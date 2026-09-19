@@ -259,6 +259,25 @@ async function runSuite() {
   const createdPollId = res.data.id || res.data.poll?.id;
   assertCheck('Admin Poll Creation', res.status === 201 && createdPollId, `Created poll ID: ${createdPollId}`);
 
+  // Edit poll
+  res = await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: `/api/admin/polls/${createdPollId}`,
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${adminToken}`
+    }
+  }, {
+    title: `Updated Poll Title ${timestamp}`,
+    description: 'Updated description by admin test',
+    category: 'Cloud Computing',
+    duration_minutes: 90,
+    options: ['Updated Alpha', 'Updated Beta', 'New Gamma Option']
+  });
+  assertCheck('Admin Edit Poll', res.status === 200 && res.data.title?.includes('Updated Poll Title'), `Updated title: "${res.data.title}"`);
+
   // Pause poll
   res = await request({
     hostname: 'localhost',
