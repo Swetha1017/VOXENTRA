@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -15,6 +16,10 @@ type User struct {
 	Points       int64              `bson:"points" json:"points"`
 	Avatar       string             `bson:"avatar" json:"avatar"`
 	CreatedAt    time.Time          `bson:"created_at" json:"created_at"`
+}
+
+func (u User) String() string {
+	return fmt.Sprintf("User{ID: %s, Username: %s, Email: %s, Role: %s, Points: %d}", u.ID.Hex(), u.Username, u.Email, u.Role, u.Points)
 }
 
 type PollOption struct {
@@ -152,14 +157,42 @@ type RegisterRequest struct {
 	Password string `json:"password" binding:"required,min=6"`
 }
 
+func (r RegisterRequest) String() string {
+	return fmt.Sprintf("RegisterRequest{Username: %s, Email: %s, Password: [REDACTED]}", r.Username, r.Email)
+}
+
 type LoginRequest struct {
 	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required"`
 }
 
+func (r LoginRequest) String() string {
+	return fmt.Sprintf("LoginRequest{Email: %s, Password: [REDACTED]}", r.Email)
+}
+
 type AdminLoginRequest struct {
 	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required"`
+}
+
+func (r AdminLoginRequest) String() string {
+	return fmt.Sprintf("AdminLoginRequest{Email: %s, Password: [REDACTED]}", r.Email)
+}
+
+type PasswordResetRequest struct {
+	Email       string `json:"email" binding:"required,email"`
+	Token       string `json:"token" binding:"required"`
+	NewPassword string `json:"new_password" binding:"required,min=6"`
+}
+
+func (r PasswordResetRequest) String() string {
+	return fmt.Sprintf("PasswordResetRequest{Email: %s, Token: [REDACTED], NewPassword: [REDACTED]}", r.Email)
+}
+
+type PasswordResetResponse struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
+	Masked  string `json:"masked"`
 }
 
 type AuthResponse struct {

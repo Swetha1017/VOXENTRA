@@ -102,6 +102,7 @@ async function runSuite() {
   }, { email: 'swetha4110@gmail.com', password: 'segu7624' });
   assertCheck('Admin Credentials Verification', res.status === 200 && res.data.user?.role === 'admin', `Admin: ${res.data.user?.email}`);
   const adminToken = res.data.token;
+  const adminUserObj = res.data.user;
 
   // 6. RBAC Guard Verification
   console.log('\n--- 6. Role-Based Access Control (RBAC) Guard ---');
@@ -570,6 +571,41 @@ async function runSuite() {
   console.log('\n--- 17. Frontend Dev Server Availability ---');
   res = await request({ hostname: '127.0.0.1', port: 5173, path: '/', method: 'GET' });
   assertCheck('Frontend HTTP 200 OK', res.status === 200 && res.headers['content-type']?.includes('text/html'), 'Vite serving Single Page Application');
+
+  // 18. Security Hardening & Zero Plaintext Exposure
+  console.log('\n--- 18. Security Hardening & Zero Plaintext Exposure ---');
+  // Check admin login payload did not leak password_hash
+  assertCheck('Admin Credentials Never Leaked in API Response', adminUserObj?.password === undefined && adminUserObj?.password_hash === undefined, 'No password or hash fields serialized in User DTO');
+
+  // Check demo voter registration blocked
+  let secRes = await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: '/api/auth/register',
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  }, { username: 'Demo Voter', email: 'voter@voxentra.com', password: 'password123' });
+  assertCheck('Demo Voter Registration Permanently Blocked (403)', secRes.status === 403, 'Demo voter registration rejected');
+
+  // Check demo voter login blocked
+  secRes = await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: '/api/auth/login',
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  }, { email: 'voter@voxentra.com', password: 'voxentra2026' });
+  assertCheck('Demo Voter Login Blocked (401)', secRes.status === 401, 'Demo voter authentication rejected');
+
+  // Check password reset protects admin credentials
+  secRes = await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: '/api/auth/reset-password',
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  }, { email: 'swetha4110@gmail.com', token: 'token123', new_password: 'newpassword123' });
+  assertCheck('Password Reset Blocks Admin Exposure with Masked Status', secRes.status === 200 && secRes.data.status === 'masked' && secRes.data.masked === '••••••••••••', 'Admin credentials protected and masked');
 
   console.log('\n================================================================');
   console.log(`  🎉 ALL ${passed} OF ${total} SYSTEM VERIFICATION CHECKS PASSED (100%) `);

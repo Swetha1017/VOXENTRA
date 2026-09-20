@@ -24,12 +24,20 @@ func NewAuthController(jwtSecret string) *AuthController {
 func (a *AuthController) Register(c *gin.Context) {
 	var req models.RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid registration request parameters"})
 		return
 	}
 
 	cleanEmail := strings.ToLower(strings.TrimSpace(req.Email))
 	cleanUsername := strings.TrimSpace(req.Username)
+
+	// Strictly reject any demo voter or demo accounts
+	if cleanEmail == "voter@voxentra.com" ||
+		strings.Contains(cleanEmail, "demo") ||
+		strings.Contains(strings.ToLower(cleanUsername), "demo") {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Demo voter accounts are permanently disabled"})
+		return
+	}
 
 	// Check if email already registered
 	existingUser, _ := database.DB.GetUserByEmail(c.Request.Context(), cleanEmail)
@@ -61,7 +69,7 @@ func (a *AuthController) Register(c *gin.Context) {
 	}
 
 	if err := database.DB.CreateUser(c.Request.Context(), &user); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user account"})
 		return
 	}
 
@@ -71,20 +79,30 @@ func (a *AuthController) Register(c *gin.Context) {
 		return
 	}
 
+	// Strictly zero out PasswordHash before returning
+	userSafe := user
+	userSafe.PasswordHash = ""
+
 	c.JSON(http.StatusCreated, models.AuthResponse{
 		Token: token,
-		User:  user,
+		User:  userSafe,
 	})
 }
 
 func (a *AuthController) Login(c *gin.Context) {
 	var req models.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid email or password format"})
 		return
 	}
 
 	cleanEmail := strings.ToLower(strings.TrimSpace(req.Email))
+
+	// Explicitly reject any demo voter account attempts
+	if cleanEmail == "voter@voxentra.com" || strings.Contains(cleanEmail, "demo") {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
+		return
+	}
 
 	user, err := database.DB.GetUserByEmail(c.Request.Context(), cleanEmail)
 	if err != nil || user == nil {
@@ -103,9 +121,13 @@ func (a *AuthController) Login(c *gin.Context) {
 		return
 	}
 
+	// Strictly zero out PasswordHash before returning
+	userSafe := *user
+	userSafe.PasswordHash = ""
+
 	c.JSON(http.StatusOK, models.AuthResponse{
 		Token: token,
-		User:  *user,
+		User:  userSafe,
 	})
 }
 
@@ -113,13 +135,13 @@ func (a *AuthController) Login(c *gin.Context) {
 func (a *AuthController) AdminLogin(c *gin.Context) {
 	var req models.AdminLoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid administrator login credentials"})
 		return
 	}
 
 	cleanEmail := strings.ToLower(strings.TrimSpace(req.Email))
 
-	// Designate swetha4110@gmail.com with password segu7624 as the sole admin account
+	// Designate swetha4110@gmail.com as the sole admin account
 	if cleanEmail != "swetha4110@gmail.com" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Access denied: Unauthorized administrator credentials"})
 		return
@@ -142,9 +164,13 @@ func (a *AuthController) AdminLogin(c *gin.Context) {
 		return
 	}
 
+	// Strictly zero out PasswordHash before returning
+	adminSafe := *adminUser
+	adminSafe.PasswordHash = ""
+
 	c.JSON(http.StatusOK, models.AuthResponse{
 		Token: token,
-		User:  *adminUser,
+		User:  adminSafe,
 	})
 }
 
@@ -167,7 +193,59 @@ func (a *AuthController) GetMe(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, user)
+	userSafe := *user
+	userSafe.PasswordHash = ""
+
+	c.JSON(http.StatusOK, userSafe)
+}
+
+func (a *AuthController) ResetPassword(c *gin.Context) {
+	var req models.PasswordResetRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid password reset request parameters"})
+		return
+	}
+
+	cleanEmail := strings.ToLower(strings.TrimSpace(req.Email))
+
+	// Strict Protection: Admin password can NEVER be reset or revealed through public reset interfaces
+	if cleanEmail == "swetha4110@gmail.com" {
+		c.JSON(http.StatusOK, models.PasswordResetResponse{
+			Status:  "masked",
+			Message: "If an eligible account exists, a secure verification token has been processed. Administrator credentials cannot be accessed or reset via public interfaces.",
+			Masked:  "••••••••••••",
+		})
+		return
+	}
+
+	// Strictly block demo voter or demo accounts
+	if cleanEmail == "voter@voxentra.com" || strings.Contains(cleanEmail, "demo") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Demo voter accounts cannot be reset"})
+		return
+	}
+
+	cleanToken := strings.TrimSpace(req.Token)
+	if len(cleanToken) < 6 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid or expired reset verification token"})
+		return
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to securely process credentials"})
+		return
+	}
+
+	if err := database.DB.ResetUserPassword(c.Request.Context(), cleanEmail, string(hashedPassword)); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Account not found or ineligible for reset"})
+		return
+	}
+
+	c.JSON(http.StatusOK, models.PasswordResetResponse{
+		Status:  "success",
+		Message: "Password has been successfully updated. Please sign in with your new credentials.",
+		Masked:  "••••••••••••",
+	})
 }
 
 func (a *AuthController) GetUserDashboard(c *gin.Context) {

@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"live-polling-backend/config"
@@ -40,6 +42,7 @@ func setupTestRouter() *gin.Engine {
 			auth.POST("/register", authController.Register)
 			auth.POST("/login", authController.Login)
 			auth.POST("/admin-login", authController.AdminLogin)
+			auth.POST("/reset-password", authController.ResetPassword)
 			auth.GET("/me", middleware.AuthRequired(cfg.JWTSecret), authController.GetMe)
 		}
 
@@ -901,5 +904,125 @@ func TestAdminAuditLogTracking(t *testing.T) {
 		t.Fatalf("Expected at least 2 audit logs (creation + duration change), found %d: %+v", len(logsResp.AuditLogs), logsResp.AuditLogs)
 	}
 }
+
+func TestSecurityAndAccessControls(t *testing.T) {
+	router := setupTestRouter()
+
+	// 1. Verify "demo voter" cannot register (403 Forbidden)
+	demoRegPayload := models.RegisterRequest{
+		Username: "Demo Voter",
+		Email:    "voter@voxentra.com",
+		Password: "password123",
+	}
+	body, _ := json.Marshal(demoRegPayload)
+	wReg := httptest.NewRecorder()
+	rReg, _ := http.NewRequest("POST", "/api/auth/register", bytes.NewBuffer(body))
+	rReg.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wReg, rReg)
+	if wReg.Code != http.StatusForbidden {
+		t.Fatalf("Expected 403 Forbidden for demo voter registration, got %d: %s", wReg.Code, wReg.Body.String())
+	}
+
+	// 2. Verify "demo voter" cannot log in (401 Unauthorized)
+	demoLoginPayload := models.LoginRequest{
+		Email:    "voter@voxentra.com",
+		Password: "voxentra2026",
+	}
+	bodyLogin, _ := json.Marshal(demoLoginPayload)
+	wLogin := httptest.NewRecorder()
+	rLogin, _ := http.NewRequest("POST", "/api/auth/login", bytes.NewBuffer(bodyLogin))
+	rLogin.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wLogin, rLogin)
+	if wLogin.Code != http.StatusUnauthorized {
+		t.Fatalf("Expected 401 Unauthorized for demo voter login, got %d: %s", wLogin.Code, wLogin.Body.String())
+	}
+
+	// 3. Verify Admin Login NEVER exposes password or password_hash in response body
+	adminLoginPayload := models.AdminLoginRequest{
+		Email:    "swetha4110@gmail.com",
+		Password: "segu7624",
+	}
+	bodyAdmin, _ := json.Marshal(adminLoginPayload)
+	wAdmin := httptest.NewRecorder()
+	rAdmin, _ := http.NewRequest("POST", "/api/auth/admin-login", bytes.NewBuffer(bodyAdmin))
+	rAdmin.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wAdmin, rAdmin)
+	if wAdmin.Code != http.StatusOK {
+		t.Fatalf("Expected 200 OK for admin login, got %d", wAdmin.Code)
+	}
+
+	rawAdminBody := wAdmin.Body.String()
+	if strings.Contains(rawAdminBody, "password_hash") || strings.Contains(rawAdminBody, "segu7624") {
+		t.Fatalf("CRITICAL SECURITY FAILURE: Admin password or password_hash exposed in response: %s", rawAdminBody)
+	}
+
+	// 4. Verify Admin Password CANNOT be reset via public password reset endpoint
+	adminResetPayload := models.PasswordResetRequest{
+		Email:       "swetha4110@gmail.com",
+		Token:       "fake_token_12345",
+		NewPassword: "newpassword123",
+	}
+	bodyReset, _ := json.Marshal(adminResetPayload)
+	wReset := httptest.NewRecorder()
+	rReset, _ := http.NewRequest("POST", "/api/auth/reset-password", bytes.NewBuffer(bodyReset))
+	rReset.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wReset, rReset)
+
+	var resetResp models.PasswordResetResponse
+	_ = json.Unmarshal(wReset.Body.Bytes(), &resetResp)
+	if resetResp.Status != "masked" {
+		t.Fatalf("Expected masked status for admin reset attempt, got %s", resetResp.Status)
+	}
+	if strings.Contains(wReset.Body.String(), "segu7624") {
+		t.Fatalf("CRITICAL SECURITY FAILURE: Admin password leaked in reset response: %s", wReset.Body.String())
+	}
+
+	// 5. Verify regular user can reset password with token and receive masked response
+	regUserPayload := models.RegisterRequest{
+		Username: "ResetTester",
+		Email:    "resettester@voxentra.com",
+		Password: "originalpass123",
+	}
+	bodyRegU, _ := json.Marshal(regUserPayload)
+	wRegU := httptest.NewRecorder()
+	rRegU, _ := http.NewRequest("POST", "/api/auth/register", bytes.NewBuffer(bodyRegU))
+	rRegU.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wRegU, rRegU)
+
+	userResetPayload := models.PasswordResetRequest{
+		Email:       "resettester@voxentra.com",
+		Token:       "valid_token_xyz",
+		NewPassword: "newsecurepass123",
+	}
+	bodyUserReset, _ := json.Marshal(userResetPayload)
+	wUserReset := httptest.NewRecorder()
+	rUserReset, _ := http.NewRequest("POST", "/api/auth/reset-password", bytes.NewBuffer(bodyUserReset))
+	rUserReset.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wUserReset, rUserReset)
+
+	if wUserReset.Code != http.StatusOK {
+		t.Fatalf("Expected 200 OK for user reset, got %d: %s", wUserReset.Code, wUserReset.Body.String())
+	}
+	var uResetResp models.PasswordResetResponse
+	_ = json.Unmarshal(wUserReset.Body.Bytes(), &uResetResp)
+	if uResetResp.Status != "success" || uResetResp.Masked != "••••••••••••" {
+		t.Fatalf("Expected success with masked placeholder, got: %+v", uResetResp)
+	}
+
+	// 6. Verify GetAllUsers contains NO demo voter accounts and NO password hashes
+	allUsers, err := database.DB.GetAllUsers(context.Background())
+	if err != nil {
+		t.Fatalf("Failed to retrieve users: %v", err)
+	}
+	for _, u := range allUsers {
+		if strings.Contains(strings.ToLower(u.Username), "demo") || strings.Contains(strings.ToLower(u.Email), "demo") {
+			t.Fatalf("Demo account found in GetAllUsers: %+v", u)
+		}
+		if u.PasswordHash != "" {
+			t.Fatalf("PasswordHash was not redacted in GetAllUsers: %+v", u)
+		}
+	}
+}
+
 
 

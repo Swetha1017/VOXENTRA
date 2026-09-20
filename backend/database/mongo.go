@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -22,6 +23,7 @@ type Storage interface {
 	GetUserByEmail(ctx context.Context, email string) (*models.User, error)
 	GetUserByID(ctx context.Context, id primitive.ObjectID) (*models.User, error)
 	GetAllUsers(ctx context.Context) ([]models.User, error)
+	ResetUserPassword(ctx context.Context, email string, newHashedPassword string) error
 
 	// Polls
 	CreatePoll(ctx context.Context, poll *models.Poll) error
@@ -109,9 +111,12 @@ func NewInMemoryStorage() *InMemoryStorage {
 func (s *InMemoryStorage) seedData() {
 	now := time.Now()
 
-	// 1. Seed Designated Sole Admin Account
-	// swetha4110@gmail.com with password segu7624
-	adminPassHash, _ := bcrypt.GenerateFromPassword([]byte("segu7624"), bcrypt.DefaultCost)
+	// 1. Seed Designated Sole Admin Account (stored as salted bcrypt hash)
+	adminPass := os.Getenv("ADMIN_PASSWORD")
+	if adminPass == "" {
+		adminPass = "segu7624"
+	}
+	adminPassHash, _ := bcrypt.GenerateFromPassword([]byte(adminPass), bcrypt.DefaultCost)
 	adminID := primitive.NewObjectID()
 	adminUser := models.User{
 		ID:           adminID,
@@ -281,11 +286,23 @@ func (s *InMemoryStorage) CreateUser(ctx context.Context, user *models.User) err
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if _, exists := s.users[user.Email]; exists {
+	cleanEmail := strings.ToLower(strings.TrimSpace(user.Email))
+	cleanUsername := strings.ToLower(strings.TrimSpace(user.Username))
+
+	// Strictly prohibit demo voter or demo accounts
+	if cleanEmail == "voter@voxentra.com" ||
+		strings.Contains(cleanEmail, "demo") ||
+		strings.Contains(cleanUsername, "demo voter") ||
+		cleanUsername == "demo" {
+		return errors.New("demo voter accounts are permanently disabled")
+	}
+
+	if _, exists := s.users[cleanEmail]; exists {
 		return errors.New("a user with this email address already exists")
 	}
 
 	user.ID = primitive.NewObjectID()
+	user.Email = cleanEmail
 	user.CreatedAt = time.Now()
 	if user.Role == "" {
 		user.Role = "user"
@@ -294,7 +311,7 @@ func (s *InMemoryStorage) CreateUser(ctx context.Context, user *models.User) err
 		user.Avatar = fmt.Sprintf("https://api.dicebear.com/7.x/identicon/svg?seed=%s", user.Username)
 	}
 
-	s.users[user.Email] = *user
+	s.users[cleanEmail] = *user
 	s.usersByID[user.ID.Hex()] = *user
 	return nil
 }
@@ -303,7 +320,13 @@ func (s *InMemoryStorage) GetUserByEmail(ctx context.Context, email string) (*mo
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	user, exists := s.users[email]
+	cleanEmail := strings.ToLower(strings.TrimSpace(email))
+	// Block demo voter accounts from being retrieved
+	if cleanEmail == "voter@voxentra.com" || strings.Contains(cleanEmail, "demo") {
+		return nil, errors.New("user not found")
+	}
+
+	user, exists := s.users[cleanEmail]
 	if !exists {
 		return nil, errors.New("user not found")
 	}
@@ -318,6 +341,13 @@ func (s *InMemoryStorage) GetUserByID(ctx context.Context, id primitive.ObjectID
 	if !exists {
 		return nil, errors.New("user not found")
 	}
+
+	cleanEmail := strings.ToLower(user.Email)
+	cleanUsername := strings.ToLower(user.Username)
+	if cleanEmail == "voter@voxentra.com" || strings.Contains(cleanEmail, "demo") || strings.Contains(cleanUsername, "demo voter") {
+		return nil, errors.New("user not found")
+	}
+
 	return &user, nil
 }
 
@@ -327,9 +357,40 @@ func (s *InMemoryStorage) GetAllUsers(ctx context.Context) ([]models.User, error
 
 	users := make([]models.User, 0, len(s.users))
 	for _, u := range s.users {
-		users = append(users, u)
+		cleanEmail := strings.ToLower(u.Email)
+		cleanUsername := strings.ToLower(u.Username)
+		// Strictly filter out any demo voter or demo accounts entirely
+		if cleanEmail == "voter@voxentra.com" ||
+			strings.Contains(cleanEmail, "demo") ||
+			strings.Contains(cleanUsername, "demo voter") ||
+			cleanUsername == "demo" {
+			continue
+		}
+		safeUser := u
+		safeUser.PasswordHash = "" // Zero out sensitive credentials in memory
+		users = append(users, safeUser)
 	}
 	return users, nil
+}
+
+func (s *InMemoryStorage) ResetUserPassword(ctx context.Context, email string, newHashedPassword string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	cleanEmail := strings.ToLower(strings.TrimSpace(email))
+	if cleanEmail == "swetha4110@gmail.com" {
+		return errors.New("cannot reset administrator credentials via public recovery interfaces")
+	}
+
+	user, exists := s.users[cleanEmail]
+	if !exists {
+		return errors.New("user not found")
+	}
+
+	user.PasswordHash = newHashedPassword
+	s.users[cleanEmail] = user
+	s.usersByID[user.ID.Hex()] = user
+	return nil
 }
 
 // Poll Implementations
@@ -968,6 +1029,10 @@ func (s *InMemoryStorage) GetGameLeaderboard(ctx context.Context, gameName strin
 
 	var entries []models.LeaderboardEntry
 	for username, score := range userMax {
+		cleanUsername := strings.ToLower(username)
+		if cleanUsername == "demo voter" || strings.Contains(cleanUsername, "demo") {
+			continue
+		}
 		avatar := fmt.Sprintf("https://api.dicebear.com/7.x/identicon/svg?seed=%s", username)
 		entries = append(entries, models.LeaderboardEntry{
 			Username: username,
@@ -994,6 +1059,15 @@ func (s *InMemoryStorage) GetGlobalLeaderboard(ctx context.Context) ([]models.Le
 
 	var entries []models.LeaderboardEntry
 	for _, u := range s.users {
+		cleanEmail := strings.ToLower(u.Email)
+		cleanUsername := strings.ToLower(u.Username)
+		if cleanEmail == "voter@voxentra.com" ||
+			strings.Contains(cleanEmail, "demo") ||
+			strings.Contains(cleanUsername, "demo voter") ||
+			cleanUsername == "demo" {
+			continue
+		}
+
 		badges := []string{"🌟"}
 		if u.Points >= 1000 {
 			badges = []string{"🏆", "🔥", "🏅"}

@@ -1,16 +1,26 @@
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { LogIn, Mail, Lock, Eye, EyeOff, AlertCircle, Sparkles, Shield, User } from "lucide-react";
+import { LogIn, Mail, Lock, Eye, EyeOff, AlertCircle, Sparkles, Key, CheckCircle, X } from "lucide-react";
 
 export const Login = () => {
   const navigate = useNavigate();
-  const { login, adminLogin } = useAuth();
+  const { login, adminLogin, resetPassword } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Secure Password Reset Modal state
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetToken, setResetToken] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetError, setResetError] = useState("");
+  const [resetSuccess, setResetSuccess] = useState("");
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -30,15 +40,21 @@ export const Login = () => {
     }
   };
 
-  const handleDemoFill = (type) => {
-    if (type === "admin") {
-      setEmail("swetha4110@gmail.com");
-      setPassword("segu7624");
-    } else {
-      setEmail("voter@voxentra.com");
-      setPassword("voxentra2026");
+  const handleResetSubmit = async (e) => {
+    e.preventDefault();
+    setResetError("");
+    setResetSuccess("");
+    setResetLoading(true);
+    try {
+      const res = await resetPassword(resetEmail.trim(), resetToken.trim(), newPassword);
+      setResetSuccess(res.message || "Password updated successfully. All credentials masked: ••••••••••••");
+      setResetToken("");
+      setNewPassword("");
+    } catch (err) {
+      setResetError(err.message || "Unable to reset password. Please verify the reset token.");
+    } finally {
+      setResetLoading(false);
     }
-    setError("");
   };
 
   return (
@@ -103,94 +119,59 @@ export const Login = () => {
             gap: "6px",
             margin: 0,
           }}>
-            <span>💜</span>
-            <span>Your Voice Drives What's Next</span>
+            <Sparkles size={15} color="#06b6d4" />
+            <span>Next-Gen Real-Time Democratic Intelligence</span>
           </p>
         </div>
 
-        {/* Auth Card */}
-        <div className="glass-card" style={{
-          padding: "36px 32px",
+        {/* Glassmorphic Login Card */}
+        <div style={{
           background: "rgba(15, 23, 42, 0.75)",
-          border: "1px solid rgba(255, 255, 255, 0.1)",
-          borderRadius: "20px",
           backdropFilter: "blur(20px)",
-          boxShadow: "0 20px 50px rgba(0, 0, 0, 0.5)",
+          border: "1px solid var(--border-subtle, rgba(255, 255, 255, 0.1))",
+          borderRadius: "24px",
+          padding: "36px 32px",
+          boxShadow: "0 20px 50px rgba(0, 0, 0, 0.5), 0 0 40px rgba(139, 92, 246, 0.1)",
         }}>
-          {/* Top Switcher: Sign In / Register */}
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: "6px",
-            background: "rgba(255, 255, 255, 0.05)",
-            padding: "4px",
-            borderRadius: "12px",
-            marginBottom: "28px",
-          }}>
-            <button
-              type="button"
-              style={{
-                padding: "10px",
-                borderRadius: "10px",
-                border: "none",
-                background: "linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)",
-                color: "#ffffff",
-                fontWeight: 700,
-                fontSize: "0.9rem",
-                cursor: "default",
-                boxShadow: "0 2px 8px rgba(37, 99, 235, 0.3)",
-              }}
-            >
+          <div style={{ marginBottom: "24px" }}>
+            <h2 style={{
+              fontSize: "1.35rem",
+              fontWeight: 800,
+              color: "#ffffff",
+              margin: "0 0 6px",
+              letterSpacing: "-0.01em",
+            }}>
               Sign In
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate("/register")}
-              style={{
-                padding: "10px",
-                borderRadius: "10px",
-                border: "none",
-                background: "transparent",
-                color: "var(--text-muted, #94a3b8)",
-                fontWeight: 600,
-                fontSize: "0.9rem",
-                cursor: "pointer",
-                transition: "all 0.2s ease",
-              }}
-            >
-              Register
-            </button>
-          </div>
-
-          <div style={{ marginBottom: "22px" }}>
-            <h2 style={{ fontSize: "1.35rem", fontWeight: 700, color: "#ffffff", margin: "0 0 6px" }}>
-              Welcome Back
             </h2>
-            <p style={{ color: "var(--text-dim, #64748b)", fontSize: "0.85rem", margin: 0 }}>
-              Sign in to vote, participate in live polls, and play games.
+            <p style={{
+              color: "var(--text-dim, #64748b)",
+              fontSize: "0.875rem",
+              margin: 0,
+            }}>
+              Enter your credentials to access live polling sessions.
             </p>
           </div>
 
           {error && (
             <div style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "10px",
-              padding: "12px 14px",
-              background: "rgba(244, 63, 94, 0.15)",
-              border: "1px solid rgba(244, 63, 94, 0.3)",
+              background: "rgba(239, 68, 68, 0.12)",
+              border: "1px solid rgba(239, 68, 68, 0.3)",
               borderRadius: "12px",
-              color: "#fda4af",
-              fontSize: "0.85rem",
+              padding: "12px 14px",
               marginBottom: "20px",
+              display: "flex",
+              alignItems: "flex-start",
+              gap: "10px",
             }}>
-              <AlertCircle size={18} style={{ flexShrink: 0 }} />
-              <span>{error}</span>
+              <AlertCircle size={18} color="#ef4444" style={{ flexShrink: 0, marginTop: "2px" }} />
+              <span style={{ color: "#fca5a5", fontSize: "0.85rem", lineHeight: 1.4 }}>
+                {error}
+              </span>
             </div>
           )}
 
           <form onSubmit={handleSubmit}>
-            <div style={{ marginBottom: "18px" }}>
+            <div style={{ marginBottom: "20px" }}>
               <label style={{
                 display: "block",
                 fontSize: "0.8rem",
@@ -207,7 +188,7 @@ export const Login = () => {
                 <input
                   type="email"
                   required
-                  placeholder="you@example.com"
+                  placeholder="voter@domain.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="form-input"
@@ -226,23 +207,45 @@ export const Login = () => {
             </div>
 
             <div style={{ marginBottom: "24px" }}>
-              <label style={{
-                display: "block",
-                fontSize: "0.8rem",
-                fontWeight: 600,
-                color: "var(--text-muted, #94a3b8)",
-                marginBottom: "8px",
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
-              }}>
-                Password
-              </label>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                <label style={{
+                  fontSize: "0.8rem",
+                  fontWeight: 600,
+                  color: "var(--text-muted, #94a3b8)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                  margin: 0,
+                }}>
+                  Password
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowResetModal(true);
+                    setResetError("");
+                    setResetSuccess("");
+                    if (email) setResetEmail(email);
+                  }}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "#38bdf8",
+                    fontSize: "0.78rem",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    padding: 0,
+                    textDecoration: "none",
+                  }}
+                >
+                  Forgot password?
+                </button>
+              </div>
               <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
                 <Lock size={17} color="var(--text-dim, #64748b)" style={{ position: "absolute", left: "14px" }} />
                 <input
                   type={showPassword ? "text" : "password"}
                   required
-                  placeholder="••••••••"
+                  placeholder="••••••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="form-input"
@@ -302,68 +305,6 @@ export const Login = () => {
             </button>
           </form>
 
-          {/* Quick Demo Credentials for Rapid Testing */}
-          <div style={{
-            marginTop: "24px",
-            paddingTop: "20px",
-            borderTop: "1px solid rgba(255, 255, 255, 0.08)",
-          }}>
-            <div style={{
-              fontSize: "0.75rem",
-              color: "var(--text-dim, #64748b)",
-              textAlign: "center",
-              marginBottom: "10px",
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
-            }}>
-              Quick Fill Credentials
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
-              <button
-                type="button"
-                onClick={() => handleDemoFill("voter")}
-                style={{
-                  padding: "8px 10px",
-                  borderRadius: "8px",
-                  background: "rgba(255, 255, 255, 0.04)",
-                  border: "1px solid rgba(255, 255, 255, 0.08)",
-                  color: "var(--text-muted, #94a3b8)",
-                  fontSize: "0.78rem",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "6px",
-                }}
-              >
-                <User size={13} color="#06b6d4" />
-                <span>Demo Voter</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDemoFill("admin")}
-                style={{
-                  padding: "8px 10px",
-                  borderRadius: "8px",
-                  background: "rgba(255, 255, 255, 0.04)",
-                  border: "1px solid rgba(255, 255, 255, 0.08)",
-                  color: "var(--text-muted, #94a3b8)",
-                  fontSize: "0.78rem",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "6px",
-                }}
-              >
-                <Shield size={13} color="#ec4899" />
-                <span>Admin Login</span>
-              </button>
-            </div>
-          </div>
-
           <p style={{
             textAlign: "center",
             marginTop: "24px",
@@ -386,6 +327,229 @@ export const Login = () => {
           </p>
         </div>
       </div>
+
+      {/* Password Reset Modal - Strictly Masked with Tokens */}
+      {showResetModal && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(3, 7, 18, 0.85)",
+          backdropFilter: "blur(12px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000,
+          padding: "16px",
+        }}>
+          <div style={{
+            width: "100%",
+            maxWidth: "420px",
+            background: "rgba(15, 23, 42, 0.95)",
+            border: "1px solid rgba(255, 255, 255, 0.12)",
+            borderRadius: "20px",
+            padding: "28px 24px",
+            boxShadow: "0 25px 60px rgba(0, 0, 0, 0.6)",
+            position: "relative",
+          }}>
+            <button
+              onClick={() => setShowResetModal(false)}
+              style={{
+                position: "absolute",
+                top: "18px",
+                right: "18px",
+                background: "none",
+                border: "none",
+                color: "var(--text-dim, #64748b)",
+                cursor: "pointer",
+                padding: "4px",
+              }}
+            >
+              <X size={20} />
+            </button>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+              <div style={{
+                width: "38px",
+                height: "38px",
+                borderRadius: "10px",
+                background: "rgba(6, 182, 212, 0.15)",
+                border: "1px solid rgba(6, 182, 212, 0.3)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}>
+                <Key size={18} color="#06b6d4" />
+              </div>
+              <div>
+                <h3 style={{ fontSize: "1.1rem", fontWeight: 800, color: "#ffffff", margin: 0 }}>
+                  Secure Password Reset
+                </h3>
+                <p style={{ fontSize: "0.78rem", color: "var(--text-dim, #64748b)", margin: 0 }}>
+                  Token-verified credential recovery with masked payloads
+                </p>
+              </div>
+            </div>
+
+            {resetError && (
+              <div style={{
+                background: "rgba(239, 68, 68, 0.1)",
+                border: "1px solid rgba(239, 68, 68, 0.25)",
+                borderRadius: "10px",
+                padding: "10px 12px",
+                marginBottom: "16px",
+                color: "#fca5a5",
+                fontSize: "0.8rem",
+              }}>
+                {resetError}
+              </div>
+            )}
+
+            {resetSuccess && (
+              <div style={{
+                background: "rgba(16, 185, 129, 0.1)",
+                border: "1px solid rgba(16, 185, 129, 0.25)",
+                borderRadius: "10px",
+                padding: "10px 12px",
+                marginBottom: "16px",
+                color: "#6ee7b7",
+                fontSize: "0.8rem",
+                display: "flex",
+                alignItems: "flex-start",
+                gap: "8px",
+              }}>
+                <CheckCircle size={16} color="#10b981" style={{ flexShrink: 0, marginTop: "2px" }} />
+                <span>{resetSuccess}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleResetSubmit}>
+              <div style={{ marginBottom: "14px" }}>
+                <label style={{ display: "block", fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "6px", fontWeight: 600 }}>
+                  Account Email
+                </label>
+                <input
+                  type="email"
+                  required
+                  placeholder="voter@domain.com"
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    background: "rgba(255, 255, 255, 0.04)",
+                    border: "1px solid rgba(255, 255, 255, 0.1)",
+                    borderRadius: "10px",
+                    color: "#ffffff",
+                    fontSize: "0.88rem",
+                    outline: "none",
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: "14px" }}>
+                <label style={{ display: "block", fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "6px", fontWeight: 600 }}>
+                  Reset Token (Masked)
+                </label>
+                <input
+                  type="password"
+                  required
+                  placeholder="••••••••••••"
+                  value={resetToken}
+                  onChange={(e) => setResetToken(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    background: "rgba(255, 255, 255, 0.04)",
+                    border: "1px solid rgba(255, 255, 255, 0.1)",
+                    borderRadius: "10px",
+                    color: "#ffffff",
+                    fontSize: "0.88rem",
+                    outline: "none",
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: "20px" }}>
+                <label style={{ display: "block", fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "6px", fontWeight: 600 }}>
+                  New Password
+                </label>
+                <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                  <input
+                    type={showNewPassword ? "text" : "password"}
+                    required
+                    minLength={6}
+                    placeholder="••••••••••••"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "10px 38px 10px 12px",
+                      background: "rgba(255, 255, 255, 0.04)",
+                      border: "1px solid rgba(255, 255, 255, 0.1)",
+                      borderRadius: "10px",
+                      color: "#ffffff",
+                      fontSize: "0.88rem",
+                      outline: "none",
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    style={{
+                      position: "absolute",
+                      right: "10px",
+                      background: "none",
+                      border: "none",
+                      color: "var(--text-dim)",
+                      cursor: "pointer",
+                      padding: "4px",
+                    }}
+                  >
+                    {showNewPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: "10px" }}>
+                <button
+                  type="button"
+                  onClick={() => setShowResetModal(false)}
+                  style={{
+                    flex: 1,
+                    padding: "10px",
+                    borderRadius: "10px",
+                    background: "rgba(255, 255, 255, 0.05)",
+                    border: "1px solid rgba(255, 255, 255, 0.1)",
+                    color: "var(--text-muted)",
+                    fontWeight: 600,
+                    fontSize: "0.85rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={resetLoading}
+                  style={{
+                    flex: 2,
+                    padding: "10px",
+                    borderRadius: "10px",
+                    background: "linear-gradient(135deg, #06b6d4 0%, #8b5cf6 100%)",
+                    border: "none",
+                    color: "#ffffff",
+                    fontWeight: 700,
+                    fontSize: "0.85rem",
+                    cursor: resetLoading ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {resetLoading ? "Updating..." : "Update Password"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

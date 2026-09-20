@@ -56,6 +56,15 @@ export const AuthProvider = ({ children }) => {
     return data.user;
   };
 
+  const resetPassword = async (email, token, newPassword) => {
+    const data = await api.post("/api/auth/reset-password", {
+      email,
+      token,
+      new_password: newPassword,
+    });
+    return data;
+  };
+
   const logout = () => {
     localStorage.removeItem("voxentra_token");
     localStorage.removeItem("token");
@@ -82,6 +91,7 @@ export const AuthProvider = ({ children }) => {
         login,
         adminLogin,
         register,
+        resetPassword,
         logout,
         isAuthenticated: !!user,
         isAdmin,

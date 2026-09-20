@@ -54,6 +54,7 @@ func main() {
 			auth.POST("/register", authController.Register)
 			auth.POST("/login", authController.Login)
 			auth.POST("/admin-login", authController.AdminLogin) // Separate secure admin login
+			auth.POST("/reset-password", authController.ResetPassword)
 			auth.GET("/me", middleware.AuthRequired(cfg.JWTSecret), authController.GetMe)
 		}
 

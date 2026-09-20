@@ -62,8 +62,8 @@ Voxentra is a high-concurrency, real-time live polling, community commentary, an
    - QR code generation for scanning via mobile camera.
    - Clicks and converted votes are tracked by referral source and visualized in the Admin Dashboard.
 7. **Exclusive Administrator Portal:**
-   - Designated admin: `swetha4110@gmail.com` with password `segu7624`.
-   - Credentials completely hidden from all public UI (no default placeholders or exposed fields).
+   - Designated admin: `swetha4110@gmail.com` (credentials secured via salted bcrypt hashes, configured via `ADMIN_PASSWORD` environment variable).
+   - Credentials completely hidden from all public UI (no default placeholders, exposed fields, or plaintext transmissions).
    - Dedicated separate admin login route (`#admin-login`).
    - Exclusive controls: create polls, edit questions/options, delete/archive polls, manual open/close toggles, timer configuration, live commentary moderation, and comprehensive analytics.
 
@@ -118,8 +118,9 @@ docker-compose up --build
 ## 4. Admin Access & Credentials Note
 
 - **Designated Administrator Account:** `swetha4110@gmail.com`
-- **Security Password:** `segu7624`
-- **Admin Portal URL:** Navigate to `http://localhost:5173/#admin-login` (or click "Admin Access" in the footer).
+- **Security Credentials:** Managed securely via salted bcrypt hashing (configured via `ADMIN_PASSWORD` environment variable, never exposed in plaintext).
+- **Admin Portal URL:** Navigate to `http://localhost:5173/admin` or `http://localhost:5173/#admin-login` (or click "Admin Access" in the footer).
+- **Zero Plaintext Exposure:** Passwords are never returned in API payloads, logs, reset interfaces, or client bundles.
 - As per the requirements, the credentials are never displayed or exposed on any public page.
 
 ---
