@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import confetti from "canvas-confetti";
 import { api, getWSUrl } from "../api/client";
 import { useAuth } from "../context/AuthContext";
@@ -10,7 +11,26 @@ import {
   EyeOff, CheckSquare, Square, Shield
 } from "lucide-react";
 
-export const PollView = ({ pollId, navigate }) => {
+export const PollView = ({ pollId: propPollId, navigate: propNavigate }) => {
+  const routerNavigate = useNavigate();
+  const { id: paramPollId } = useParams();
+  const pollId = propPollId || paramPollId || "active";
+
+  const navigate = (to) => {
+    if (typeof to === "string") {
+      if (to === "home") routerNavigate("/home");
+      else if (to === "polls" || to === "voting") routerNavigate("/voting");
+      else if (to === "games") routerNavigate("/games");
+      else if (to === "dashboard") routerNavigate("/dashboard");
+      else if (to === "admin") routerNavigate("/admin");
+      else if (to.startsWith("poll-")) routerNavigate(`/poll/${to.replace("poll-", "")}`);
+      else routerNavigate(to.startsWith("/") ? to : `/${to}`);
+    } else if (propNavigate) {
+      propNavigate(to);
+    } else {
+      routerNavigate(to);
+    }
+  };
   const { user, isAuthenticated, isAdmin, openAuthModal } = useAuth();
   const [poll, setPoll] = useState(null);
   const [loading, setLoading] = useState(true);

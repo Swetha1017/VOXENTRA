@@ -1,16 +1,39 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { api, getGlobalWSUrl } from "../api/client";
 import { 
   Radio, Clock, Users, Zap, Award, Flame, Send, 
   Share2, ArrowRight, CheckCircle2, MessageSquare, Play, 
-  Copy, Check, Sparkles, Trophy, Trash2, Tag, BarChart3, Plus
+  Copy, Check, Sparkles, Trophy, Trash2, Tag, BarChart3, Plus,
+  Vote, LogOut, Home as HomeIcon, Gamepad2, LayoutDashboard, Shield
 } from "lucide-react";
 import confetti from "canvas-confetti";
 import { ShareModal } from "../components/ShareModal";
 
-export const Home = ({ navigate, searchQuery }) => {
-  const { user, isAuthenticated, isAdmin, openAuthModal } = useAuth();
+export const Home = ({ navigate: propNavigate, searchQuery }) => {
+  const routerNavigate = useNavigate();
+  const { user, isAuthenticated, isAdmin, openAuthModal, logout } = useAuth();
+
+  const navigate = (to) => {
+    if (typeof to === "string") {
+      if (to === "home" || to === "/") routerNavigate("/home");
+      else if (to === "polls" || to === "voting" || to === "explore") routerNavigate("/voting");
+      else if (to === "games") routerNavigate("/games");
+      else if (to === "dashboard") routerNavigate("/dashboard");
+      else if (to === "admin") routerNavigate("/admin");
+      else if (to === "leaderboard") routerNavigate("/leaderboard");
+      else if (to === "about") routerNavigate("/about");
+      else if (to === "login") routerNavigate("/login");
+      else if (to === "register") routerNavigate("/register");
+      else if (to.startsWith("poll-")) routerNavigate(`/poll/${to.replace("poll-", "")}`);
+      else routerNavigate(to.startsWith("/") ? to : `/${to}`);
+    } else if (propNavigate) {
+      propNavigate(to);
+    } else {
+      routerNavigate(to);
+    }
+  };
   const [polls, setPolls] = useState([]);
   const [comments, setComments] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
@@ -208,31 +231,33 @@ export const Home = ({ navigate, searchQuery }) => {
           <div className="vox-hero-actions">
             <button
               className="btn-hero-explore"
-              onClick={() => {
-                const el = document.getElementById("live-now-section");
-                if (el) el.scrollIntoView({ behavior: "smooth" });
-                setActiveFilter("polls");
-              }}
+              onClick={() => navigate("polls")}
             >
               <span>Explore Polls</span>
               <ArrowRight size={18} />
             </button>
 
-            <button
-              className="btn-hero-create"
-              onClick={() => {
-                if (isAdmin) {
-                  navigate("admin");
-                } else if (isAuthenticated) {
-                  navigate("create-poll");
-                } else {
-                  openAuthModal("login");
-                }
-              }}
-            >
-              <span>Create a Poll</span>
-              <Plus size={18} />
-            </button>
+            {isAdmin ? (
+              <button
+                className="btn-hero-create"
+                onClick={() => navigate("admin")}
+              >
+                <span>Admin: Create Poll</span>
+                <Plus size={18} />
+              </button>
+            ) : (
+              <button
+                className="btn-hero-create"
+                onClick={() => navigate("polls")}
+                style={{
+                  background: "rgba(255, 255, 255, 0.08)",
+                  borderColor: "rgba(255, 255, 255, 0.2)",
+                }}
+              >
+                <span>Vote in Live Polls</span>
+                <Vote size={18} />
+              </button>
+            )}
           </div>
         </div>
 
@@ -243,6 +268,135 @@ export const Home = ({ navigate, searchQuery }) => {
             alt="Voxentra — Small Votes, Big Impact"
             className="vox-hero-visual-image"
           />
+        </div>
+      </div>
+
+      {/* REQUIREMENT 3: Core Home Page Navigation Deck (Home, Explore Polls, Games, Dashboard, Logout) */}
+      <div className="glass-panel" style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        flexWrap: "wrap",
+        gap: "12px",
+        padding: "16px 24px",
+        borderRadius: "18px",
+        marginBottom: "44px",
+        background: "rgba(255, 255, 255, 0.03)",
+        border: "1px solid var(--border-subtle, rgba(255, 255, 255, 0.08))",
+        boxShadow: "0 10px 30px rgba(0, 0, 0, 0.25)",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", color: "var(--text-muted, #94a3b8)", fontSize: "0.85rem", fontWeight: 700 }}>
+          <Sparkles size={16} color="#06b6d4" />
+          <span style={{ letterSpacing: "0.04em" }}>VOXENTRA ACTIONS:</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+          {/* Button 1: Home → Home page */}
+          <button
+            onClick={() => navigate("home")}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "7px",
+              padding: "9px 18px",
+              borderRadius: "11px",
+              border: "1px solid #3b82f6",
+              background: "rgba(59, 130, 246, 0.15)",
+              color: "#60a5fa",
+              fontWeight: 700,
+              fontSize: "0.88rem",
+              cursor: "pointer",
+            }}
+          >
+            <HomeIcon size={15} />
+            <span>Home</span>
+          </button>
+
+          {/* Button 2: Explore Polls → Voting page */}
+          <button
+            onClick={() => navigate("polls")}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "7px",
+              padding: "9px 18px",
+              borderRadius: "11px",
+              border: "1px solid rgba(6, 182, 212, 0.35)",
+              background: "rgba(6, 182, 212, 0.12)",
+              color: "#38bdf8",
+              fontWeight: 700,
+              fontSize: "0.88rem",
+              cursor: "pointer",
+            }}
+          >
+            <Radio size={15} />
+            <span>Explore Polls</span>
+          </button>
+
+          {/* Button 3: Games → Games page */}
+          <button
+            onClick={() => navigate("games")}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "7px",
+              padding: "9px 18px",
+              borderRadius: "11px",
+              border: "1px solid rgba(236, 72, 153, 0.35)",
+              background: "rgba(236, 72, 153, 0.12)",
+              color: "#f472b6",
+              fontWeight: 700,
+              fontSize: "0.88rem",
+              cursor: "pointer",
+            }}
+          >
+            <Gamepad2 size={15} />
+            <span>Games</span>
+          </button>
+
+          {/* Button 4: Dashboard → Dashboard page */}
+          <button
+            onClick={() => navigate("dashboard")}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "7px",
+              padding: "9px 18px",
+              borderRadius: "11px",
+              border: "1px solid rgba(139, 92, 246, 0.35)",
+              background: "rgba(139, 92, 246, 0.12)",
+              color: "#c084fc",
+              fontWeight: 700,
+              fontSize: "0.88rem",
+              cursor: "pointer",
+            }}
+          >
+            <LayoutDashboard size={15} />
+            <span>Dashboard</span>
+          </button>
+
+          {/* Button 5: Logout → Login page */}
+          <button
+            onClick={() => {
+              logout();
+              navigate("login");
+            }}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "7px",
+              padding: "9px 18px",
+              borderRadius: "11px",
+              border: "1px solid rgba(244, 63, 94, 0.35)",
+              background: "rgba(244, 63, 94, 0.12)",
+              color: "#fda4af",
+              fontWeight: 700,
+              fontSize: "0.88rem",
+              cursor: "pointer",
+            }}
+          >
+            <LogOut size={15} />
+            <span>Logout</span>
+          </button>
         </div>
       </div>
 
@@ -259,19 +413,18 @@ export const Home = ({ navigate, searchQuery }) => {
               <span className="vox-admin-pill">Admin</span>
             </div>
             <p className="vox-feature-desc">
-              Ask questions, set options, and get started in seconds.
+              Ask questions, set options, and get started in seconds. (Admin clearance required)
             </p>
           </div>
           <button
             className="vox-round-arrow-btn"
-            title="Create a Poll"
+            title={isAdmin ? "Create a Poll in Admin Portal" : "Admin access required"}
             onClick={() => {
               if (isAdmin) {
                 navigate("admin");
-              } else if (isAuthenticated) {
-                navigate("create-poll");
               } else {
-                openAuthModal("login");
+                alert("Only administrators can create or edit poll questions. Registered voters can participate and vote in all live polls!");
+                navigate("polls");
               }
             }}
           >
@@ -320,12 +473,7 @@ export const Home = ({ navigate, searchQuery }) => {
             className="vox-round-arrow-btn"
             title="Open Live Results"
             onClick={() => {
-              if (polls.length > 0) {
-                navigate(`poll-${polls[0].id}`);
-              } else {
-                const el = document.getElementById("live-now-section");
-                if (el) el.scrollIntoView({ behavior: "smooth" });
-              }
+              navigate("polls");
             }}
           >
             <ArrowRight size={18} />

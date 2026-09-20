@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { api, getGlobalWSUrl, getPollWSUrl } from "../api/client";
 import { 
@@ -11,7 +12,22 @@ import { showToast } from "../components/Toast";
 import { ShareModal } from "../components/ShareModal";
 import confetti from "canvas-confetti";
 
-export const Dashboard = ({ navigate }) => {
+export const Dashboard = ({ navigate: propNavigate }) => {
+  const routerNavigate = useNavigate();
+  const navigate = (to) => {
+    if (typeof to === "string") {
+      if (to === "home") routerNavigate("/home");
+      else if (to === "polls" || to === "voting") routerNavigate("/voting");
+      else if (to === "games") routerNavigate("/games");
+      else if (to === "admin") routerNavigate("/admin");
+      else if (to.startsWith("poll-")) routerNavigate(`/poll/${to.replace("poll-", "")}`);
+      else routerNavigate(to.startsWith("/") ? to : `/${to}`);
+    } else if (propNavigate) {
+      propNavigate(to);
+    } else {
+      routerNavigate(to);
+    }
+  };
   const { user, isAuthenticated, isAdmin, openAuthModal } = useAuth();
   
   const [activeSection, setActiveSection] = useState("voting"); // "voting" | "commentary" | "history"

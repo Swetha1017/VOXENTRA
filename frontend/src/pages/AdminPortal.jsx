@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../api/client";
 import { 
@@ -9,7 +10,22 @@ import {
 } from "lucide-react";
 import { showToast } from "../components/Toast";
 
-export const AdminPortal = ({ navigate }) => {
+export const AdminPortal = ({ navigate: propNavigate }) => {
+  const routerNavigate = useNavigate();
+  const navigate = (to) => {
+    if (typeof to === "string") {
+      if (to === "home") routerNavigate("/home");
+      else if (to === "polls" || to === "voting") routerNavigate("/voting");
+      else if (to === "games") routerNavigate("/games");
+      else if (to === "dashboard") routerNavigate("/dashboard");
+      else if (to.startsWith("poll-")) routerNavigate(`/poll/${to.replace("poll-", "")}`);
+      else routerNavigate(to.startsWith("/") ? to : `/${to}`);
+    } else if (propNavigate) {
+      propNavigate(to);
+    } else {
+      routerNavigate(to);
+    }
+  };
   const { user, isAdmin, adminLogin, logout } = useAuth();
   const [adminEmail, setAdminEmail] = useState("");
   const [adminPassword, setAdminPassword] = useState("");

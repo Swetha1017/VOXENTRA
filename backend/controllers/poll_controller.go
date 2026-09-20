@@ -213,6 +213,12 @@ func (p *PollController) TrackReferral(c *gin.Context) {
 
 // ADMIN EXCLUSIVE: Create Poll
 func (p *PollController) AdminCreatePoll(c *gin.Context) {
+	role, exists := c.Get("role")
+	if !exists || role != "admin" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied: Only administrators can create or edit poll questions"})
+		return
+	}
+
 	userIDHex, _ := c.Get("userID")
 	username, _ := c.Get("username")
 
@@ -384,6 +390,12 @@ func (p *PollController) AdminCreatePoll(c *gin.Context) {
 
 // ADMIN EXCLUSIVE: Edit / Update Poll
 func (p *PollController) AdminUpdatePoll(c *gin.Context) {
+	role, exists := c.Get("role")
+	if !exists || role != "admin" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied: Only administrators can create or edit poll questions"})
+		return
+	}
+
 	idHex := c.Param("id")
 	pollID, err := primitive.ObjectIDFromHex(idHex)
 	if err != nil {

@@ -1,13 +1,79 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import { api } from "../api/client";
-import { Plus, Trash2, HelpCircle, ArrowRight, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Plus, Trash2, HelpCircle, ArrowRight, AlertCircle, CheckCircle2, Shield, ArrowLeft } from "lucide-react";
 
-export const CreatePoll = ({ navigate }) => {
+export const CreatePoll = ({ navigate: propNavigate }) => {
+  const routerNavigate = useNavigate();
+  const { isAdmin } = useAuth();
+
+  const navigate = (to) => {
+    if (typeof to === "string") {
+      if (to === "home") routerNavigate("/home");
+      else if (to === "polls" || to === "voting") routerNavigate("/voting");
+      else if (to.startsWith("poll-")) routerNavigate(`/poll/${to.replace("poll-", "")}`);
+      else routerNavigate(to.startsWith("/") ? to : `/${to}`);
+    } else if (propNavigate) {
+      propNavigate(to);
+    } else {
+      routerNavigate(to);
+    }
+  };
+
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [options, setOptions] = useState(["", ""]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  if (!isAdmin) {
+    return (
+      <div style={{ maxWidth: "540px", margin: "80px auto", padding: "0 16px", textAlign: "center" }}>
+        <div className="glass-card" style={{ padding: "40px" }}>
+          <div style={{
+            width: "56px",
+            height: "56px",
+            borderRadius: "16px",
+            background: "rgba(244, 63, 94, 0.15)",
+            border: "1px solid rgba(244, 63, 94, 0.3)",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            marginBottom: "16px",
+            color: "#fda4af",
+          }}>
+            <Shield size={28} />
+          </div>
+          <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#ffffff", marginBottom: "8px" }}>
+            Admin Access Required
+          </h2>
+          <p style={{ color: "var(--text-muted, #94a3b8)", fontSize: "0.95rem", lineHeight: "1.5", marginBottom: "24px" }}>
+            Only administrators can create or edit poll questions. Registered voters can participate and vote on all active polls.
+          </p>
+          <button
+            onClick={() => navigate("polls")}
+            style={{
+              padding: "12px 24px",
+              borderRadius: "12px",
+              border: "none",
+              background: "linear-gradient(135deg, #06b6d4 0%, #8b5cf6 100%)",
+              color: "#ffffff",
+              fontWeight: 700,
+              fontSize: "0.95rem",
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "8px",
+            }}
+          >
+            <ArrowLeft size={16} />
+            <span>Go to Live Voting</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const handleOptionChange = (index, value) => {
     const updated = [...options];

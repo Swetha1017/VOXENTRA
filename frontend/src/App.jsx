@@ -1,8 +1,16 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { Navbar } from "./components/Navbar";
 import { AuthModal } from "./components/AuthModal";
+import { ToastContainer } from "./components/Toast";
+import { ProtectedRoute, PublicOnlyRoute, AdminRoute } from "./components/ProtectedRoute";
+
+// Pages
+import { Login } from "./pages/Login";
+import { Register } from "./pages/Register";
 import { Home } from "./pages/Home";
+import { VotingPage } from "./pages/VotingPage";
 import { PollView } from "./pages/PollView";
 import { Games } from "./pages/Games";
 import { Leaderboard } from "./pages/Leaderboard";
@@ -10,100 +18,34 @@ import { Dashboard } from "./pages/Dashboard";
 import { AdminPortal } from "./pages/AdminPortal";
 import { About } from "./pages/About";
 import { CreatePoll } from "./pages/CreatePoll";
-import { ToastContainer } from "./components/Toast";
-import { Check } from "lucide-react";
 
-const AppContent = () => {
-  const { loading } = useAuth();
-  const [route, setRoute] = useState("home");
-  const [pollId, setPollId] = useState(null);
-  const [searchQuery, setSearchQuery] = useState("");
-
-  const parseHash = () => {
-    const hash = window.location.hash.replace(/^#/, "");
-    if (!hash || hash === "/" || hash === "home") {
-      setRoute("home");
-      setPollId(null);
-    } else if (hash.startsWith("poll-")) {
-      setRoute("poll");
-      const raw = hash.replace("poll-", "");
-      const cleanPollId = raw.split("?")[0];
-      setPollId(cleanPollId || "active");
-    } else if (hash === "poll" || hash === "live-poll") {
-      setRoute("poll");
-      setPollId("active");
-    } else if (hash === "polls" || hash === "explore") {
-      setRoute("polls");
-      setPollId(null);
-      setTimeout(() => {
-        const el = document.getElementById("live-now-section");
-        if (el) el.scrollIntoView({ behavior: "smooth" });
-      }, 100);
-    } else if (hash === "create-poll") {
-      setRoute("create-poll");
-      setPollId(null);
-    } else if (["games", "leaderboard", "dashboard", "about", "admin", "admin-login"].includes(hash)) {
-      setRoute(hash);
-      setPollId(null);
-    } else {
-      setRoute("home");
-      setPollId(null);
-    }
-  };
-
-  useEffect(() => {
-    parseHash();
-    window.addEventListener("hashchange", parseHash);
-    return () => window.removeEventListener("hashchange", parseHash);
-  }, []);
-
-  const navigate = (to) => {
-    window.location.hash = to;
-  };
-
-  if (loading) {
-    return (
-      <div style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        color: "var(--text-muted)",
-        fontSize: "1.1rem",
-        background: "var(--bg-primary)",
-      }}>
-        Initializing Voxentra...
-      </div>
-    );
-  }
+/**
+ * Authenticated Layout:
+ * Only rendered for authenticated users.
+ * Displays global Navbar, main routed outlet, modals, toast container, and footer.
+ */
+const AuthenticatedLayout = () => {
+  const navigate = useNavigate();
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       {/* Global Navbar */}
-      <Navbar currentRoute={route} navigate={navigate} onSearch={setSearchQuery} />
+      <Navbar />
 
       {/* Main Routed Content */}
       <main style={{ flex: 1 }}>
-        {route === "home" && <Home navigate={navigate} searchQuery={searchQuery} />}
-        {route === "polls" && <Home navigate={navigate} searchQuery={searchQuery} />}
-        {route === "poll" && <PollView pollId={pollId} navigate={navigate} />}
-        {route === "create-poll" && <CreatePoll navigate={navigate} />}
-        {route === "games" && <Games navigate={navigate} />}
-        {route === "leaderboard" && <Leaderboard navigate={navigate} />}
-        {route === "about" && <About navigate={navigate} />}
-        {route === "dashboard" && <Dashboard navigate={navigate} />}
-        {(route === "admin" || route === "admin-login") && <AdminPortal navigate={navigate} />}
+        <Outlet />
       </main>
 
-      {/* Global Auth Modal for Seamless Sign up / Sign in */}
+      {/* Global Auth Modal */}
       <AuthModal />
 
-      {/* Global Action Toast Container */}
+      {/* Global Toast Container */}
       <ToastContainer />
 
-      {/* Footer matching Voxentra design */}
+      {/* Modern Voxentra Footer */}
       <footer style={{
-        borderTop: "1px solid var(--border-subtle)",
+        borderTop: "1px solid var(--border-subtle, rgba(255, 255, 255, 0.08))",
         padding: "36px 24px",
         background: "rgba(6, 8, 18, 0.95)",
         marginTop: "auto",
@@ -117,7 +59,7 @@ const AppContent = () => {
           flexWrap: "wrap",
           gap: "20px",
         }}>
-          {/* Footer Logo & Tagline */}
+          {/* Brand Logo & Tagline */}
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
             <div style={{
               width: "34px",
@@ -137,24 +79,25 @@ const AppContent = () => {
               <div style={{ fontWeight: 800, color: "#ffffff", fontSize: "1.1rem" }}>
                 Voxentra
               </div>
-              <div style={{ fontSize: "0.75rem", color: "var(--text-dim)" }}>
+              <div style={{ fontSize: "0.75rem", color: "var(--text-dim, #64748b)" }}>
                 💜 Your Voice Drives What's Next
               </div>
             </div>
           </div>
 
-          {/* Footer Links */}
-          <div style={{ display: "flex", alignItems: "center", gap: "24px", fontSize: "0.85rem", color: "var(--text-muted)" }}>
-            <button onClick={() => navigate("home")} style={{ background: "none", color: "inherit" }}>Home</button>
-            <button onClick={() => navigate("polls")} style={{ background: "none", color: "inherit" }}>Explore</button>
-            <button onClick={() => navigate("games")} style={{ background: "none", color: "inherit" }}>Games</button>
-            <button onClick={() => navigate("leaderboard")} style={{ background: "none", color: "inherit" }}>Leaderboard</button>
-            <button onClick={() => navigate("about")} style={{ background: "none", color: "inherit" }}>About</button>
-            <button onClick={() => navigate("admin")} style={{ background: "none", color: "var(--text-dim)", fontSize: "0.78rem" }}>Admin Access</button>
+          {/* Footer Quick Links */}
+          <div style={{ display: "flex", alignItems: "center", gap: "24px", fontSize: "0.85rem", color: "var(--text-muted, #94a3b8)", flexWrap: "wrap" }}>
+            <button onClick={() => navigate("/home")} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer" }}>Home</button>
+            <button onClick={() => navigate("/voting")} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer" }}>Explore Polls</button>
+            <button onClick={() => navigate("/games")} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer" }}>Games</button>
+            <button onClick={() => navigate("/dashboard")} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer" }}>Dashboard</button>
+            <button onClick={() => navigate("/leaderboard")} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer" }}>Leaderboard</button>
+            <button onClick={() => navigate("/about")} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer" }}>About</button>
+            <button onClick={() => navigate("/admin")} style={{ background: "none", border: "none", color: "var(--text-dim, #64748b)", fontSize: "0.78rem", cursor: "pointer" }}>Admin Access</button>
           </div>
 
           {/* Right Signature Note */}
-          <div style={{ fontSize: "0.85rem", color: "var(--text-dim)" }}>
+          <div style={{ fontSize: "0.85rem", color: "var(--text-dim, #64748b)" }}>
             Empowering Democratic Opinions & Live Polls 💜
           </div>
         </div>
@@ -166,7 +109,76 @@ const AppContent = () => {
 export function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <BrowserRouter>
+        <Routes>
+          {/* Public Authentication Pages (Only visible before login) */}
+          <Route
+            path="/login"
+            element={
+              <PublicOnlyRoute>
+                <Login />
+              </PublicOnlyRoute>
+            }
+          />
+          <Route
+            path="/register"
+            element={
+              <PublicOnlyRoute>
+                <Register />
+              </PublicOnlyRoute>
+            }
+          />
+
+          {/* Root Path: Redirects to /home if authenticated, or /login if unauthenticated */}
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <Navigate to="/home" replace />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Protected Application Routes (Requires login) */}
+          <Route
+            element={
+              <ProtectedRoute>
+                <AuthenticatedLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route path="/home" element={<Home />} />
+            <Route path="/voting" element={<VotingPage />} />
+            <Route path="/polls" element={<VotingPage />} />
+            <Route path="/poll/:id" element={<PollView />} />
+            <Route path="/games" element={<Games />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/leaderboard" element={<Leaderboard />} />
+            <Route path="/about" element={<About />} />
+
+            {/* Admin-only Routes */}
+            <Route
+              path="/admin"
+              element={
+                <AdminRoute>
+                  <AdminPortal />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/create-poll"
+              element={
+                <AdminRoute>
+                  <CreatePoll />
+                </AdminRoute>
+              }
+            />
+          </Route>
+
+          {/* Catch-all: redirect to / */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
     </AuthProvider>
   );
 }
