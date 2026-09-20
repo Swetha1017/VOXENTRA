@@ -4,7 +4,7 @@ import { api, getGlobalWSUrl } from "../api/client";
 import { 
   Radio, Clock, Users, Zap, Award, Flame, Send, 
   Share2, ArrowRight, CheckCircle2, MessageSquare, Play, 
-  Copy, Check, Sparkles, Trophy, Trash2 
+  Copy, Check, Sparkles, Trophy, Trash2, Tag, BarChart3, Plus
 } from "lucide-react";
 import confetti from "canvas-confetti";
 import { ShareModal } from "../components/ShareModal";
@@ -184,286 +184,170 @@ export const Home = ({ navigate, searchQuery }) => {
 
   return (
     <div style={{ maxWidth: "1280px", margin: "0 auto", padding: "40px 24px 80px" }}>
-      {/* 1. HERO SECTION */}
-      <div className="hero-flex-container" style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: "40px",
-        marginBottom: "48px",
-      }}>
-        {/* Hero Left Content */}
-        <div style={{ flex: 1, maxWidth: "580px" }}>
-          {/* Top Tagline */}
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "16px" }}>
-            <span style={{ color: "#a855f7", fontSize: "0.95rem" }}>💜</span>
-            <span style={{
-              fontSize: "0.82rem",
-              fontWeight: 800,
-              letterSpacing: "0.08em",
-              color: "#c084fc",
-              textTransform: "uppercase",
-            }}>
-              Your Voice Drives What's Next
-            </span>
+      {/* 1. VOXENTRA HERO SECTION */}
+      <div className="vox-hero-section">
+        {/* Left: 💜 Your Voice Drives What's Next — Small Vote. Bigger Impact. Together. */}
+        <div style={{ flex: 1, maxWidth: "620px" }}>
+          {/* Eyebrow Tagline: 💜 Your Voice Drives What's Next */}
+          <div className="vox-hero-eyebrow">
+            <span className="vox-heart-icon">💜</span>
+            <span>Your Voice Drives What's Next</span>
           </div>
 
-          {/* Hero Headline: "Small Vote. Bigger Impact. Together." */}
-          <h1 style={{
-            fontSize: "clamp(2.4rem, 4.8vw, 3.8rem)",
-            fontWeight: 900,
-            lineHeight: 1.12,
-            marginBottom: "16px",
-            color: "#ffffff",
-          }}>
+          <h1 className="vox-hero-title">
             Small Vote. <br />
-            <span style={{
-              background: "linear-gradient(135deg, #a855f7 0%, #6366f1 50%, #06b6d4 100%)",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-            }}>
-              Bigger Impact.
-            </span><br />
+            <span className="vox-gradient-text">Bigger Impact.</span> <br />
             Together.
           </h1>
 
-          {/* Subtitle */}
-          <p style={{
-            fontSize: "1.05rem",
-            color: "var(--text-muted)",
-            lineHeight: 1.6,
-            marginBottom: "28px",
-          }}>
+          <p className="vox-hero-subtitle">
             Live polls, exciting games, real-time reactions and a community that makes every moment count.
           </p>
 
-          {/* Action Buttons */}
-          <div style={{ display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap", marginBottom: "40px" }}>
+          {/* Action CTAs */}
+          <div className="vox-hero-actions">
             <button
-              className="btn-vox-primary"
-              style={{ padding: "12px 28px", fontSize: "1rem" }}
-              onClick={() => {
-                if (isAuthenticated) {
-                  navigate("dashboard");
-                } else {
-                  openAuthModal("register");
-                }
-              }}
-            >
-              <span>Register & Join</span>
-            </button>
-            <button
-              className="btn-vox-secondary"
-              style={{ padding: "12px 24px", fontSize: "1rem" }}
+              className="btn-hero-explore"
               onClick={() => {
                 const el = document.getElementById("live-now-section");
                 if (el) el.scrollIntoView({ behavior: "smooth" });
+                setActiveFilter("polls");
               }}
             >
-              <Radio size={16} color="#06b6d4" />
-              <span>Explore Live Polls</span>
+              <span>Explore Polls</span>
+              <ArrowRight size={18} />
             </button>
-          </div>
 
-          {/* Distinct, Separated Metric Stat Cards (Removed clustered display & Idea label) */}
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
-            gap: "12px",
-          }}>
-            <div style={{
-              background: "rgba(15, 23, 42, 0.6)",
-              border: "1px solid rgba(255, 255, 255, 0.08)",
-              borderRadius: "12px",
-              padding: "12px 16px",
-            }}>
-              <div style={{ fontSize: "1.4rem", fontWeight: 800, color: "#ffffff" }}>10K+</div>
-              <div style={{ fontSize: "0.74rem", color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                Active Voters
-              </div>
-            </div>
-
-            <div style={{
-              background: "rgba(15, 23, 42, 0.6)",
-              border: "1px solid rgba(255, 255, 255, 0.08)",
-              borderRadius: "12px",
-              padding: "12px 16px",
-            }}>
-              <div style={{ fontSize: "1.4rem", fontWeight: 800, color: "#818cf8" }}>200+</div>
-              <div style={{ fontSize: "0.74rem", color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                Live Sessions
-              </div>
-            </div>
-
-            <div style={{
-              background: "rgba(15, 23, 42, 0.6)",
-              border: "1px solid rgba(255, 255, 255, 0.08)",
-              borderRadius: "12px",
-              padding: "12px 16px",
-            }}>
-              <div style={{ fontSize: "1.4rem", fontWeight: 800, color: "#22d3ee" }}>50+</div>
-              <div style={{ fontSize: "0.74rem", color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                Gaming Events
-              </div>
-            </div>
-
-            <div style={{
-              background: "rgba(15, 23, 42, 0.6)",
-              border: "1px solid rgba(255, 255, 255, 0.08)",
-              borderRadius: "12px",
-              padding: "12px 16px",
-            }}>
-              <div style={{ fontSize: "1.4rem", fontWeight: 800, color: "#34d399" }}>99.9%</div>
-              <div style={{ fontSize: "0.74rem", color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                Audit Accuracy
-              </div>
-            </div>
+            <button
+              className="btn-hero-create"
+              onClick={() => {
+                if (isAdmin) {
+                  navigate("admin");
+                } else if (isAuthenticated) {
+                  navigate("create-poll");
+                } else {
+                  openAuthModal("login");
+                }
+              }}
+            >
+              <span>Create a Poll</span>
+              <Plus size={18} />
+            </button>
           </div>
         </div>
 
-        {/* Hero Center Visual: 3D Holographic Podium with Prism Emblem & Floating Badges */}
-        <div style={{
-          position: "relative",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-        }}>
-          <div className="podium-wrapper">
-            {/* Concentric Glowing Neon Rings */}
-            <div className="podium-glow-ring" />
-            <div className="podium-cylinder" />
-
-            {/* Floating 3D V Hologram Prism */}
-            <div className="hologram-prism">
-              <svg width="130" height="130" viewBox="0 0 100 100" fill="none">
-                <defs>
-                  <linearGradient id="prismGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stopColor="#06b6d4" />
-                    <stop offset="50%" stopColor="#8b5cf6" />
-                    <stop offset="100%" stopColor="#ec4899" />
-                  </linearGradient>
-                </defs>
-                <path d="M15 15L50 85L85 15H65L50 50L35 15H15Z" fill="url(#prismGrad)" />
-                <path d="M35 15L50 50L65 15H52L50 20L48 15H35Z" fill="#ffffff" opacity="0.4" />
-              </svg>
-            </div>
-
-            {/* Floating Circular Interactive Nodes */}
-            {/* 1. Vote (Top-Left) */}
-            <div className="floating-pill" style={{ top: "10px", left: "10px" }}>
-              <div className="floating-pill-icon" style={{ background: "rgba(6, 182, 212, 0.2)", border: "1px solid #06b6d4" }}>
-                <Radio size={18} color="#06b6d4" />
-              </div>
-              <span style={{ color: "#38bdf8" }}>Vote</span>
-            </div>
-
-            {/* 2. Play (Top-Right) */}
-            <div className="floating-pill" style={{ top: "10px", right: "10px", animationDelay: "1s" }}>
-              <div className="floating-pill-icon" style={{ background: "rgba(139, 92, 246, 0.2)", border: "1px solid #8b5cf6" }}>
-                <Zap size={18} color="#a855f7" />
-              </div>
-              <span style={{ color: "#c084fc" }}>Play</span>
-            </div>
-
-            {/* 3. Comment (Bottom-Left) */}
-            <div className="floating-pill" style={{ bottom: "65px", left: "-15px", animationDelay: "1.8s" }}>
-              <div className="floating-pill-icon" style={{ background: "rgba(236, 72, 153, 0.2)", border: "1px solid #ec4899" }}>
-                <MessageSquare size={18} color="#f472b6" />
-              </div>
-              <span style={{ color: "#f472b6" }}>Comment</span>
-            </div>
-
-            {/* 4. Compete (Bottom-Right) */}
-            <div className="floating-pill" style={{ bottom: "65px", right: "-15px", animationDelay: "2.4s" }}>
-              <div className="floating-pill-icon" style={{ background: "rgba(245, 158, 11, 0.2)", border: "1px solid #f59e0b" }}>
-                <Trophy size={18} color="#fbbf24" />
-              </div>
-              <span style={{ color: "#fbbf24" }}>Compete</span>
-            </div>
-          </div>
-
-          {/* Handwritten Style Accent Below Podium */}
-          <div style={{ marginTop: "14px", textAlign: "center" }}>
-            <span className="script-accent">
-              Small Votes, Big Impact 💜
-            </span>
-          </div>
+        {/* Right: 3D Holographic Prism V Podium Visual with 4 Floating Nodes */}
+        <div className="vox-hero-visual-container">
+          <img
+            src="/voxentra_hero_visual.png"
+            alt="Voxentra — Small Votes, Big Impact"
+            className="vox-hero-visual-image"
+          />
         </div>
-
-        {/* Hero Right Callout Card matching screenshot */}
-        {!isAuthenticated ? (
-          <div className="glass-panel hero-right-card" style={{
-            width: "300px",
-            padding: "26px",
-            display: "flex",
-            flexDirection: "column",
-            justifyContent: "center",
-          }}>
-            <h3 style={{ fontSize: "1.25rem", fontWeight: 800, color: "#ffffff", marginBottom: "8px" }}>
-              Ready to make an impact?
-            </h3>
-            <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", lineHeight: 1.5, marginBottom: "20px" }}>
-              Create an account to vote, join games, comment and be part of the Voxentra community.
-            </p>
-            <button
-              className="btn-vox-primary"
-              style={{ width: "100%", padding: "12px", fontSize: "0.95rem", marginBottom: "12px" }}
-              onClick={() => openAuthModal("register")}
-            >
-              Register Now
-            </button>
-            <div style={{ textAlign: "center", fontSize: "0.8rem", color: "var(--text-dim)" }}>
-              Already have an account?{" "}
-              <button
-                onClick={() => openAuthModal("login")}
-                style={{ background: "none", color: "#a78bfa", fontWeight: 700, cursor: "pointer" }}
-              >
-                Login
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="glass-panel hero-right-card" style={{
-            width: "300px",
-            padding: "26px",
-            display: "flex",
-            flexDirection: "column",
-            justifyContent: "center",
-          }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
-              <img
-                src={user?.avatar}
-                alt={user?.username}
-                style={{ width: "42px", height: "42px", borderRadius: "50%", border: "2px solid #8b5cf6" }}
-              />
-              <div>
-                <div style={{ fontWeight: 800, color: "#ffffff" }}>{user?.username}</div>
-                <div style={{ fontSize: "0.75rem", color: "var(--text-dim)" }}>Member Status: Active</div>
-              </div>
-            </div>
-            <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "18px" }}>
-              You have cast votes in active community polls. Track your impact on the dashboard.
-            </p>
-            <button
-              className="btn-vox-primary"
-              style={{ width: "100%", padding: "10px" }}
-              onClick={() => navigate("dashboard")}
-            >
-              Go to Dashboard
-            </button>
-          </div>
-        )}
       </div>
 
-      {/* 2. QUICK CATEGORIES ROW */}
+      {/* 2. THE 3 FEATURE CARDS */}
+      <div id="voxentra-features-section" className="vox-features-grid">
+        {/* Card 1: Create a Poll [Admin] */}
+        <div className="vox-feature-card">
+          <div>
+            <div className="vox-feature-icon blue">
+              <Tag size={24} color="#ffffff" />
+            </div>
+            <div className="vox-feature-title">
+              <span>Create a Poll</span>
+              <span className="vox-admin-pill">Admin</span>
+            </div>
+            <p className="vox-feature-desc">
+              Ask questions, set options, and get started in seconds.
+            </p>
+          </div>
+          <button
+            className="vox-round-arrow-btn"
+            title="Create a Poll"
+            onClick={() => {
+              if (isAdmin) {
+                navigate("admin");
+              } else if (isAuthenticated) {
+                navigate("create-poll");
+              } else {
+                openAuthModal("login");
+              }
+            }}
+          >
+            <ArrowRight size={18} />
+          </button>
+        </div>
+
+        {/* Card 2: Share Anywhere */}
+        <div className="vox-feature-card">
+          <div>
+            <div className="vox-feature-icon cyan">
+              <Share2 size={24} color="#ffffff" />
+            </div>
+            <div className="vox-feature-title">
+              <span>Share Anywhere</span>
+            </div>
+            <p className="vox-feature-desc">
+              Send your poll link via URL, QR code or social media.
+            </p>
+          </div>
+          <button
+            className="vox-round-arrow-btn"
+            title="Share Poll Link & QR Code"
+            onClick={() => {
+              setSharePoll(polls[0] || { id: "active", title: "Voxentra Live Community Poll" });
+            }}
+          >
+            <ArrowRight size={18} />
+          </button>
+        </div>
+
+        {/* Card 3: See Results Live */}
+        <div className="vox-feature-card">
+          <div>
+            <div className="vox-feature-icon purple">
+              <BarChart3 size={24} color="#ffffff" />
+            </div>
+            <div className="vox-feature-title">
+              <span>See Results Live</span>
+            </div>
+            <p className="vox-feature-desc">
+              Watch votes come in in real-time, no refresh needed.
+            </p>
+          </div>
+          <button
+            className="vox-round-arrow-btn"
+            title="Open Live Results"
+            onClick={() => {
+              if (polls.length > 0) {
+                navigate(`poll-${polls[0].id}`);
+              } else {
+                const el = document.getElementById("live-now-section");
+                if (el) el.scrollIntoView({ behavior: "smooth" });
+              }
+            }}
+          >
+            <ArrowRight size={18} />
+          </button>
+        </div>
+      </div>
+
+      {/* 3. QUICK CATEGORIES ROW */}
       <div style={{
         display: "grid",
         gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
         gap: "16px",
         marginBottom: "56px",
       }}>
-        <div className="glass-panel category-card" onClick={() => navigate("polls")}>
+        <div 
+          className="glass-panel category-card" 
+          onClick={() => {
+            const el = document.getElementById("live-now-section");
+            if (el) el.scrollIntoView({ behavior: "smooth" });
+            setActiveFilter("polls");
+          }}
+        >
           <Radio size={22} color="#06b6d4" />
           <div>
             <div style={{ fontWeight: 700, color: "#ffffff", fontSize: "0.95rem" }}>Live Polls</div>
@@ -599,7 +483,7 @@ export const Home = ({ navigate, searchQuery }) => {
             return (
               <div
                 key={poll.id}
-                className="glass-panel"
+                className="glass-panel poll-interactive-card"
                 style={{
                   padding: "24px",
                   display: "flex",
@@ -610,20 +494,41 @@ export const Home = ({ navigate, searchQuery }) => {
                 <div>
                   {/* Card Meta Header */}
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
-                    <span className="badge-live-poll">
+                    <span 
+                      className="badge-live-poll clickable"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`poll-${poll.id}`);
+                      }}
+                      title="Touch or click to open live poll"
+                    >
                       <span className="pulse-dot-green" />
                       <span>Live Poll</span>
                     </span>
 
-                    <div style={{ display: "flex", alignItems: "center", gap: "12px", fontSize: "0.8rem", color: "var(--text-muted)" }}>
-                      <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                        <Clock size={14} />
-                        <span>02:34</span>
-                      </span>
-                      <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                        <Users size={14} />
-                        <span>{poll.total_votes.toLocaleString()}</span>
-                      </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px", fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                        <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                          <Clock size={14} />
+                          <span>02:34</span>
+                        </span>
+                        <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                          <Users size={14} />
+                          <span>{poll.total_votes.toLocaleString()}</span>
+                        </span>
+                      </div>
+
+                      <button
+                        className="open-live-poll-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`poll-${poll.id}`);
+                        }}
+                        title="Open full interactive live poll"
+                      >
+                        <span>Open</span>
+                        <ArrowRight size={13} />
+                      </button>
                     </div>
                   </div>
 
@@ -631,7 +536,7 @@ export const Home = ({ navigate, searchQuery }) => {
                   <h3 
                     onClick={() => navigate(`poll-${poll.id}`)}
                     style={{
-                      fontSize: "1.15rem",
+                      fontSize: "1.18rem",
                       fontWeight: 700,
                       color: "#ffffff",
                       lineHeight: 1.4,
@@ -639,7 +544,7 @@ export const Home = ({ navigate, searchQuery }) => {
                       cursor: "pointer",
                       transition: "color 0.2s ease",
                     }}
-                    onMouseEnter={(e) => e.currentTarget.style.color = "#a78bfa"}
+                    onMouseEnter={(e) => e.currentTarget.style.color = "#38bdf8"}
                     onMouseLeave={(e) => e.currentTarget.style.color = "#ffffff"}
                   >
                     {poll.title}
@@ -690,33 +595,60 @@ export const Home = ({ navigate, searchQuery }) => {
                   </div>
                 </div>
 
-                {/* Vote Action Button */}
-                <button
-                  disabled={hasVoted || !poll.is_active}
-                  onClick={() => handleVote(poll)}
-                  className="btn-vox-primary"
-                  style={{
-                    width: "100%",
-                    padding: "12px",
-                    background: hasVoted
-                      ? "rgba(16, 185, 129, 0.2)"
-                      : undefined,
-                    border: hasVoted ? "1px solid #10b981" : undefined,
-                    color: hasVoted ? "#34d399" : "#ffffff",
-                  }}
-                >
-                  {hasVoted ? (
-                    <>
-                      <CheckCircle2 size={16} />
-                      <span>Voted Successfully</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>Vote Now</span>
-                      <ArrowRight size={16} />
-                    </>
-                  )}
-                </button>
+                <div>
+                  {/* Vote Action Button */}
+                  <button
+                    disabled={hasVoted || !poll.is_active}
+                    onClick={() => handleVote(poll)}
+                    className="btn-vox-primary"
+                    style={{
+                      width: "100%",
+                      padding: "12px",
+                      background: hasVoted
+                        ? "rgba(16, 185, 129, 0.2)"
+                        : undefined,
+                      border: hasVoted ? "1px solid #10b981" : undefined,
+                      color: hasVoted ? "#34d399" : "#ffffff",
+                    }}
+                  >
+                    {hasVoted ? (
+                      <>
+                        <CheckCircle2 size={16} />
+                        <span>Voted Successfully</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Vote Now</span>
+                        <ArrowRight size={16} />
+                      </>
+                    )}
+                  </button>
+
+                  {/* Secondary Open Live Poll Details Button */}
+                  <button
+                    onClick={() => navigate(`poll-${poll.id}`)}
+                    style={{
+                      width: "100%",
+                      padding: "9px 12px",
+                      marginTop: "8px",
+                      background: "rgba(37, 99, 235, 0.12)",
+                      border: "1px solid rgba(59, 130, 246, 0.25)",
+                      borderRadius: "10px",
+                      color: "#93c5fd",
+                      fontSize: "0.84rem",
+                      fontWeight: 700,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "6px",
+                      cursor: "pointer",
+                      transition: "all 0.2s ease",
+                    }}
+                  >
+                    <BarChart3 size={15} />
+                    <span>Open Live Stream & Real-time Chart</span>
+                  </button>
+                </div>
               </div>
             );
           })}

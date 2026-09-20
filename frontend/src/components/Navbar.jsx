@@ -1,10 +1,22 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
-import { Search, LogIn, LogOut, Shield, Award, User, Flame } from "lucide-react";
+import { Search, LogIn, LogOut, Shield, User, Flame, Moon, Sun, Check, Zap, Trophy } from "lucide-react";
 
 export const Navbar = ({ currentRoute, navigate, onSearch }) => {
   const { user, logout, isAuthenticated, isAdmin, openAuthModal } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
+  const [theme, setTheme] = useState(() => {
+    return localStorage.getItem("voxentra_theme") || "dark";
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("voxentra_theme", theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
+  };
 
   const handleSearchChange = (e) => {
     const val = e.target.value;
@@ -12,16 +24,34 @@ export const Navbar = ({ currentRoute, navigate, onSearch }) => {
     if (onSearch) onSearch(val);
   };
 
+  const handleExploreClick = () => {
+    navigate("polls");
+    setTimeout(() => {
+      const el = document.getElementById("live-now-section");
+      if (el) el.scrollIntoView({ behavior: "smooth" });
+    }, 100);
+  };
+
+  const handleFeaturesClick = () => {
+    if (currentRoute !== "home") {
+      navigate("home");
+    }
+    setTimeout(() => {
+      const el = document.getElementById("voxentra-features-section");
+      if (el) el.scrollIntoView({ behavior: "smooth" });
+    }, 150);
+  };
+
   return (
     <nav style={{
       display: "flex",
       alignItems: "center",
       justifyContent: "space-between",
-      padding: "14px 36px",
+      padding: "16px 40px",
       borderBottom: "1px solid var(--border-subtle)",
-      background: "rgba(7, 9, 19, 0.88)",
-      backdropFilter: "blur(18px)",
-      WebkitBackdropFilter: "blur(18px)",
+      background: "rgba(7, 9, 20, 0.9)",
+      backdropFilter: "blur(20px)",
+      WebkitBackdropFilter: "blur(20px)",
       position: "sticky",
       top: 0,
       zIndex: 100,
@@ -48,23 +78,21 @@ export const Navbar = ({ currentRoute, navigate, onSearch }) => {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          boxShadow: "0 0 20px rgba(139, 92, 246, 0.55)",
+          boxShadow: "0 0 22px rgba(139, 92, 246, 0.6)",
           position: "relative",
         }}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
             <path d="M4 4L12 20L20 4H15L12 12L9 4H4Z" fill="#ffffff" />
           </svg>
         </div>
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <span style={{ fontSize: "1.35rem", fontWeight: 900, letterSpacing: "-0.03em", color: "#ffffff" }}>
-              Voxentra
-            </span>
-          </div>
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <span style={{ fontSize: "1.45rem", fontWeight: 900, letterSpacing: "-0.03em", color: "#ffffff" }}>
+            Voxentra
+          </span>
         </div>
       </div>
 
-      {/* Center Navigation Links */}
+      {/* Center Navigation Links matching reference screenshot: Home, Explore, Features, About */}
       <div style={{ display: "flex", alignItems: "center", gap: "28px", flexShrink: 0 }}>
         <button
           onClick={() => navigate("home")}
@@ -86,15 +114,15 @@ export const Navbar = ({ currentRoute, navigate, onSearch }) => {
               left: 0,
               right: 0,
               height: "2.5px",
-              background: "linear-gradient(90deg, #8b5cf6, #06b6d4)",
+              background: "linear-gradient(90deg, #3b82f6, #06b6d4)",
               borderRadius: "2px",
-              boxShadow: "0 0 10px #8b5cf6",
+              boxShadow: "0 0 10px #3b82f6",
             }} />
           )}
         </button>
 
         <button
-          onClick={() => navigate("polls")}
+          onClick={handleExploreClick}
           style={{
             background: "none",
             color: currentRoute === "polls" || currentRoute === "poll" ? "#ffffff" : "var(--text-muted)",
@@ -105,7 +133,7 @@ export const Navbar = ({ currentRoute, navigate, onSearch }) => {
             transition: "color 0.2s ease",
           }}
         >
-          Live Polls
+          Explore
           {(currentRoute === "polls" || currentRoute === "poll") && (
             <span style={{
               position: "absolute",
@@ -113,62 +141,24 @@ export const Navbar = ({ currentRoute, navigate, onSearch }) => {
               left: 0,
               right: 0,
               height: "2.5px",
-              background: "linear-gradient(90deg, #8b5cf6, #06b6d4)",
+              background: "linear-gradient(90deg, #3b82f6, #06b6d4)",
               borderRadius: "2px",
             }} />
           )}
         </button>
 
         <button
-          onClick={() => navigate("games")}
+          onClick={handleFeaturesClick}
           style={{
             background: "none",
-            color: currentRoute === "games" ? "#ffffff" : "var(--text-muted)",
+            color: "var(--text-muted)",
             fontSize: "0.95rem",
             fontWeight: 600,
-            position: "relative",
             padding: "6px 0",
             transition: "color 0.2s ease",
           }}
         >
-          Games
-          {currentRoute === "games" && (
-            <span style={{
-              position: "absolute",
-              bottom: 0,
-              left: 0,
-              right: 0,
-              height: "2.5px",
-              background: "linear-gradient(90deg, #8b5cf6, #06b6d4)",
-              borderRadius: "2px",
-            }} />
-          )}
-        </button>
-
-        <button
-          onClick={() => navigate("leaderboard")}
-          style={{
-            background: "none",
-            color: currentRoute === "leaderboard" ? "#ffffff" : "var(--text-muted)",
-            fontSize: "0.95rem",
-            fontWeight: 600,
-            position: "relative",
-            padding: "6px 0",
-            transition: "color 0.2s ease",
-          }}
-        >
-          Leaderboard
-          {currentRoute === "leaderboard" && (
-            <span style={{
-              position: "absolute",
-              bottom: 0,
-              left: 0,
-              right: 0,
-              height: "2.5px",
-              background: "linear-gradient(90deg, #8b5cf6, #06b6d4)",
-              borderRadius: "2px",
-            }} />
-          )}
+          Features
         </button>
 
         <button
@@ -191,14 +181,45 @@ export const Navbar = ({ currentRoute, navigate, onSearch }) => {
               left: 0,
               right: 0,
               height: "2.5px",
-              background: "linear-gradient(90deg, #8b5cf6, #06b6d4)",
+              background: "linear-gradient(90deg, #3b82f6, #06b6d4)",
               borderRadius: "2px",
             }} />
           )}
         </button>
+
+        {/* Extra community features: Games & Leaderboard */}
+        <button
+          onClick={() => navigate("games")}
+          style={{
+            background: "none",
+            color: currentRoute === "games" ? "#ffffff" : "var(--text-muted)",
+            fontSize: "0.95rem",
+            fontWeight: 600,
+            position: "relative",
+            padding: "6px 0",
+            transition: "color 0.2s ease",
+          }}
+        >
+          Games
+        </button>
+
+        <button
+          onClick={() => navigate("leaderboard")}
+          style={{
+            background: "none",
+            color: currentRoute === "leaderboard" ? "#ffffff" : "var(--text-muted)",
+            fontSize: "0.95rem",
+            fontWeight: 600,
+            position: "relative",
+            padding: "6px 0",
+            transition: "color 0.2s ease",
+          }}
+        >
+          Leaderboard
+        </button>
       </div>
 
-      {/* Right Search and Actions */}
+      {/* Right Actions: Search, Theme Toggle & Login Pill Button */}
       <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
         {/* Search Input Bar */}
         <div style={{
@@ -209,12 +230,12 @@ export const Navbar = ({ currentRoute, navigate, onSearch }) => {
           border: "1px solid var(--border-subtle)",
           borderRadius: "9999px",
           padding: "6px 14px",
-          width: "230px",
+          width: "210px",
         }}>
-          <Search size={16} color="var(--text-dim)" style={{ marginRight: "8px" }} />
+          <Search size={15} color="var(--text-dim)" style={{ marginRight: "8px" }} />
           <input
             type="text"
-            placeholder="Search events, polls..."
+            placeholder="Search polls..."
             value={searchTerm}
             onChange={handleSearchChange}
             style={{
@@ -227,28 +248,20 @@ export const Navbar = ({ currentRoute, navigate, onSearch }) => {
           />
         </div>
 
-        {/* Live Election Pill Button (Screenshot 2 Match) */}
+        {/* Dark/Light Theme Toggle (Screenshot Match) */}
         <button
-          onClick={() => navigate("polls")}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-            background: "rgba(99, 102, 241, 0.2)",
-            border: "1px solid rgba(129, 140, 248, 0.4)",
-            color: "#e0e7ff",
-            padding: "6px 14px",
-            borderRadius: "9999px",
-            fontSize: "0.82rem",
-            fontWeight: 700,
-            cursor: "pointer",
-            transition: "all 0.2s ease",
-          }}
+          onClick={toggleTheme}
+          title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
+          className="theme-switch-btn"
         >
-          <span className="pulse-dot-green" style={{ width: "7px", height: "7px" }} />
-          <span>Live Election</span>
+          {theme === "dark" ? (
+            <Moon size={18} color="#38bdf8" />
+          ) : (
+            <Sun size={18} color="#f59e0b" />
+          )}
         </button>
 
+        {/* User Account / Login Button */}
         {isAuthenticated ? (
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
             {isAdmin && (
@@ -257,9 +270,9 @@ export const Navbar = ({ currentRoute, navigate, onSearch }) => {
                 style={{
                   padding: "6px 14px",
                   fontSize: "0.85rem",
-                  borderColor: "rgba(139, 92, 246, 0.5)",
-                  background: "rgba(139, 92, 246, 0.15)",
-                  color: "#c084fc",
+                  borderColor: "rgba(37, 99, 235, 0.5)",
+                  background: "rgba(37, 99, 235, 0.15)",
+                  color: "#60a5fa",
                 }}
                 onClick={() => navigate("admin")}
               >
@@ -274,7 +287,7 @@ export const Navbar = ({ currentRoute, navigate, onSearch }) => {
                 display: "flex",
                 alignItems: "center",
                 gap: "10px",
-                background: "rgba(255, 255, 255, 0.05)",
+                background: "rgba(255, 255, 255, 0.06)",
                 border: "1px solid var(--border-subtle)",
                 borderRadius: "9999px",
                 padding: "4px 14px 4px 6px",
@@ -284,7 +297,7 @@ export const Navbar = ({ currentRoute, navigate, onSearch }) => {
               <img
                 src={user?.avatar || `https://api.dicebear.com/7.x/identicon/svg?seed=${user?.username}`}
                 alt={user?.username}
-                style={{ width: "28px", height: "28px", borderRadius: "50%", border: "1.5px solid #8b5cf6" }}
+                style={{ width: "28px", height: "28px", borderRadius: "50%", border: "1.5px solid #3b82f6" }}
               />
               <span style={{ fontSize: "0.875rem", fontWeight: 600, color: "#ffffff" }}>
                 {user?.username}
@@ -326,20 +339,27 @@ export const Navbar = ({ currentRoute, navigate, onSearch }) => {
           </div>
         ) : (
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            {/* Blue Pill Login Button matching screenshot */}
             <button
-              className="btn-vox-secondary"
-              style={{ padding: "8px 18px", fontSize: "0.9rem" }}
+              style={{
+                background: "#2563eb",
+                color: "#ffffff",
+                padding: "10px 22px",
+                borderRadius: "9999px",
+                fontSize: "0.92rem",
+                fontWeight: 700,
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                boxShadow: "0 4px 14px rgba(37, 99, 235, 0.4)",
+                cursor: "pointer",
+                border: "none",
+                transition: "all 0.2s ease",
+              }}
               onClick={() => openAuthModal("login")}
             >
-              <LogIn size={15} />
+              <User size={16} />
               <span>Login</span>
-            </button>
-            <button
-              className="btn-vox-primary"
-              style={{ padding: "8px 20px", fontSize: "0.9rem" }}
-              onClick={() => openAuthModal("register")}
-            >
-              <span>Register</span>
             </button>
           </div>
         )}

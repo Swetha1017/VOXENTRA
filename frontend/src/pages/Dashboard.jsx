@@ -4,14 +4,15 @@ import { api, getGlobalWSUrl, getPollWSUrl } from "../api/client";
 import { 
   BarChart2, MessageSquare, Award, Flame, Trophy, Share2, 
   CheckCircle2, Clock, Copy, Check, Sparkles, ArrowRight,
-  Vote, Send, RefreshCw, QrCode, Gamepad2, Palette, Shield
+  Vote, Send, RefreshCw, QrCode, Gamepad2, Palette, Shield,
+  Plus, Trash2, Calendar, AlertTriangle, Eye, Edit3, History, X
 } from "lucide-react";
 import { showToast } from "../components/Toast";
 import { ShareModal } from "../components/ShareModal";
 import confetti from "canvas-confetti";
 
 export const Dashboard = ({ navigate }) => {
-  const { user, isAuthenticated, openAuthModal } = useAuth();
+  const { user, isAuthenticated, isAdmin, openAuthModal } = useAuth();
   
   const [activeSection, setActiveSection] = useState("voting"); // "voting" | "commentary" | "history"
   const [dashboardData, setDashboardData] = useState(null);
@@ -23,6 +24,32 @@ export const Dashboard = ({ navigate }) => {
   const [votingSuccess, setVotingSuccess] = useState({});
   const [sharePoll, setSharePoll] = useState(null);
   const [copied, setCopied] = useState(false);
+
+  // Admin Question Creation State
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createTab, setCreateTab] = useState("form"); // "form" | "preview"
+  const [createForm, setCreateForm] = useState({
+    title: "",
+    description: "",
+    category: "Technology",
+    options: ["", ""],
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+    durationMinutes: 60,
+    selectionType: "single",
+    resultVisibility: "immediate",
+  });
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createError, setCreateError] = useState("");
+
+  // Admin Timing & Schedule Management State
+  const [timingModalPoll, setTimingModalPoll] = useState(null);
+  const [timingDuration, setTimingDuration] = useState(60);
+  const [timingTimezone, setTimingTimezone] = useState("UTC");
+  const [timingLoading, setTimingLoading] = useState(false);
+  const [timingError, setTimingError] = useState("");
+  const [showHistoryModal, setShowHistoryModal] = useState(null);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [logsLoading, setLogsLoading] = useState(false);
 
   // Load Fresh Data with Zero Stale State
   const loadFreshDashboard = async () => {
@@ -130,6 +157,168 @@ export const Dashboard = ({ navigate }) => {
     } catch (err) {
       showToast(err.message, "error");
     }
+  };
+
+  // Admin: Create Question Handlers
+  const handleAddOption = () => {
+    if (createForm.options.length < 10) {
+      setCreateForm((prev) => ({ ...prev, options: [...prev.options, ""] }));
+    }
+  };
+
+  const handleRemoveOption = (index) => {
+    if (createForm.options.length > 2) {
+      setCreateForm((prev) => ({
+        ...prev,
+        options: prev.options.filter((_, i) => i !== index),
+      }));
+    }
+  };
+
+  const handleOptionChange = (index, value) => {
+    const next = [...createForm.options];
+    next[index] = value;
+    setCreateForm((prev) => ({ ...prev, options: next }));
+  };
+
+  const handleCreatePoll = async (status) => {
+    setCreateError("");
+    const trimmedTitle = createForm.title.trim();
+    if (!trimmedTitle || trimmedTitle.length < 3) {
+      setCreateError("Question title must be at least 3 characters long.");
+      return;
+    }
+
+    const cleanOptions = createForm.options.map((o) => o.trim()).filter(Boolean);
+    if (cleanOptions.length < 2) {
+      setCreateError("Please provide at least 2 non-empty options.");
+      return;
+    }
+
+    const unique = new Set(cleanOptions.map((o) => o.toLowerCase()));
+    if (unique.size !== cleanOptions.length) {
+      setCreateError("Options must be unique (no duplicates).");
+      return;
+    }
+
+    const dur = Number(createForm.durationMinutes);
+    if (dur < 25 || dur > 120) {
+      setCreateError("Voting period duration must be between 25 and 120 minutes.");
+      return;
+    }
+
+    setCreateLoading(true);
+    try {
+      const payload = {
+        title: trimmedTitle,
+        description: createForm.description.trim(),
+        category: createForm.category,
+        options: cleanOptions,
+        duration_minutes: dur,
+        timezone: createForm.timezone,
+        selection_type: createForm.selectionType,
+        result_visibility: createForm.resultVisibility,
+        status: status, // "active" or "draft"
+        is_active: status === "active",
+      };
+
+      await api.post("/api/admin/polls", payload);
+      showToast(status === "active" ? "Voting question published live!" : "Question saved as draft successfully!");
+      setShowCreateModal(false);
+      setCreateForm({
+        title: "",
+        description: "",
+        category: "Technology",
+        options: ["", ""],
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+        durationMinutes: 60,
+        selectionType: "single",
+        resultVisibility: "immediate",
+      });
+      loadFreshDashboard();
+    } catch (err) {
+      setCreateError(err.message || "Failed to create question");
+    } finally {
+      setCreateLoading(false);
+    }
+  };
+
+  // Admin: Timing & Schedule Handlers
+  const handleOpenTimingModal = (poll) => {
+    setTimingModalPoll(poll);
+    setTimingDuration(poll.duration_minutes || 60);
+    setTimingTimezone(poll.timezone || "UTC");
+    setTimingError("");
+  };
+
+  const handleQuickAdjust = (mins) => {
+    setTimingDuration((prev) => Math.max(25, Math.min(120, prev + mins)));
+  };
+
+  const handleSaveTiming = async () => {
+    if (!timingModalPoll) return;
+    setTimingError("");
+    setTimingLoading(true);
+    try {
+      await api.put(`/api/admin/polls/${timingModalPoll.id}`, {
+        duration_minutes: Number(timingDuration),
+        timezone: timingTimezone,
+      });
+      showToast("Voting schedule updated successfully!");
+      setTimingModalPoll(null);
+      loadFreshDashboard();
+    } catch (err) {
+      setTimingError(err.message || "Failed to update timing");
+    } finally {
+      setTimingLoading(false);
+    }
+  };
+
+  const handleClosePollEarly = async () => {
+    if (!timingModalPoll) return;
+    if (!window.confirm(`Close voting early for "${timingModalPoll.title}"? Current voters will see results immediately.`)) {
+      return;
+    }
+    setTimingLoading(true);
+    try {
+      await api.patch(`/api/admin/polls/${timingModalPoll.id}/end`, {});
+      showToast("Voting session closed early.");
+      setTimingModalPoll(null);
+      loadFreshDashboard();
+    } catch (err) {
+      setTimingError(err.message || "Failed to close poll");
+    } finally {
+      setTimingLoading(false);
+    }
+  };
+
+  const handleOpenHistoryModal = async (poll) => {
+    setShowHistoryModal(poll);
+    setLogsLoading(true);
+    try {
+      const logs = await api.get(`/api/admin/polls/${poll.id}/audit-logs`);
+      setAuditLogs(logs || []);
+    } catch (err) {
+      setAuditLogs([]);
+    } finally {
+      setLogsLoading(false);
+    }
+  };
+
+  const getTimingStatus = (poll) => {
+    if (!poll.is_active && (poll.status === "ended" || poll.status === "closed")) {
+      return { label: "Closed", color: "#ef4444", bg: "rgba(239, 68, 68, 0.15)" };
+    }
+    if (poll.status === "draft") {
+      return { label: "Draft", color: "#94a3b8", bg: "rgba(148, 163, 184, 0.15)" };
+    }
+    if (poll.status === "upcoming") {
+      return { label: "Upcoming", color: "#f59e0b", bg: "rgba(245, 158, 11, 0.15)" };
+    }
+    if (poll.is_escalated) {
+      return { label: "Extended", color: "#a855f7", bg: "rgba(168, 85, 247, 0.15)" };
+    }
+    return { label: "Active", color: "#10b981", bg: "rgba(168, 85, 129, 0.15)" };
   };
 
   const referralUrl = `${window.location.origin}/?ref=${user?.username || "friend"}`;
@@ -328,7 +517,7 @@ export const Dashboard = ({ navigate }) => {
       {/* SECTION 1: LIVE VOTING INTERFACE */}
       {activeSection === "voting" && (
         <div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", flexWrap: "wrap", gap: "12px" }}>
             <div>
               <h2 style={{ fontSize: "1.5rem", fontWeight: 800, color: "#ffffff" }}>
                 Active Voting Sessions
@@ -337,9 +526,24 @@ export const Dashboard = ({ navigate }) => {
                 Each poll session starts fresh with zero stale votes. Click an option below to cast your authenticated vote!
               </p>
             </div>
-            <button className="btn-vox-secondary" onClick={loadFreshDashboard} style={{ padding: "8px 14px", fontSize: "0.82rem" }}>
-              <RefreshCw size={14} /> Refresh Polls
-            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              {isAdmin && (
+                <button
+                  className="btn-vox-primary"
+                  onClick={() => {
+                    setCreateTab("form");
+                    setCreateError("");
+                    setShowCreateModal(true);
+                  }}
+                  style={{ padding: "8px 16px", fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "6px" }}
+                >
+                  <Plus size={16} /> Create Question
+                </button>
+              )}
+              <button className="btn-vox-secondary" onClick={loadFreshDashboard} style={{ padding: "8px 14px", fontSize: "0.82rem" }}>
+                <RefreshCw size={14} /> Refresh Polls
+              </button>
+            </div>
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))", gap: "24px" }}>
@@ -355,6 +559,20 @@ export const Dashboard = ({ navigate }) => {
                       <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#34d399" }}>
                         {poll.is_active ? "Live Election Round" : "Voting Concluded"}
                       </span>
+                      {isAdmin && (
+                        <span style={{
+                          padding: "2px 8px",
+                          borderRadius: "9999px",
+                          fontSize: "0.72rem",
+                          fontWeight: 800,
+                          color: getTimingStatus(poll).color,
+                          background: getTimingStatus(poll).bg,
+                          border: `1px solid ${getTimingStatus(poll).color}40`,
+                          textTransform: "uppercase",
+                        }}>
+                          {getTimingStatus(poll).label}
+                        </span>
+                      )}
                     </div>
 
                     <button 
@@ -483,6 +701,57 @@ export const Dashboard = ({ navigate }) => {
                       <Share2 size={14} /> Share & QR
                     </button>
                   </div>
+
+                  {/* Admin Scheduling Toolbar */}
+                  {isAdmin && (
+                    <div style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      marginTop: "14px",
+                      paddingTop: "12px",
+                      borderTop: "1px dashed rgba(255, 255, 255, 0.08)",
+                      flexWrap: "wrap",
+                      gap: "8px",
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.78rem", color: "#94a3b8" }}>
+                        <Clock size={13} color="#38bdf8" />
+                        <span>{poll.duration_minutes || 60}m · {poll.timezone || "UTC"}</span>
+                      </div>
+                      <div style={{ display: "flex", gap: "8px" }}>
+                        <button
+                          className="btn-vox-secondary"
+                          onClick={() => handleOpenTimingModal(poll)}
+                          style={{
+                            padding: "4px 12px",
+                            fontSize: "0.75rem",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "5px",
+                            color: "#38bdf8",
+                            borderColor: "rgba(56, 189, 248, 0.35)",
+                          }}
+                        >
+                          <Clock size={12} /> Timing
+                        </button>
+                        <button
+                          className="btn-vox-secondary"
+                          onClick={() => handleOpenHistoryModal(poll)}
+                          style={{
+                            padding: "4px 12px",
+                            fontSize: "0.75rem",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "5px",
+                            color: "#c084fc",
+                            borderColor: "rgba(192, 132, 252, 0.35)",
+                          }}
+                        >
+                          <History size={12} /> Log
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -626,6 +895,791 @@ export const Dashboard = ({ navigate }) => {
           isOpen={!!sharePoll}
           onClose={() => setSharePoll(null)}
         />
+      )}
+
+      {/* ADMIN MODAL 1: CREATE QUESTION FOR VOTING */}
+      {showCreateModal && (
+        <div className="modal-overlay" onClick={() => !createLoading && setShowCreateModal(false)}>
+          <div
+            className="modal-card"
+            style={{ maxWidth: "680px", maxHeight: "90vh", overflowY: "auto" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <div style={{
+                  width: "36px",
+                  height: "36px",
+                  borderRadius: "10px",
+                  background: "linear-gradient(135deg, #8b5cf6, #06b6d4)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}>
+                  <Plus size={20} color="#ffffff" />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: "1.3rem", fontWeight: 800, color: "#ffffff", margin: 0 }}>
+                    Create Voting Question
+                  </h3>
+                  <p style={{ fontSize: "0.8rem", color: "var(--text-dim)", margin: 0 }}>
+                    Admin Functionality · Design, preview & launch real-time audience questions
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setShowCreateModal(false)}
+                style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* View Mode Toggle: Form vs Preview */}
+            <div style={{
+              display: "flex",
+              gap: "8px",
+              background: "rgba(255, 255, 255, 0.05)",
+              padding: "4px",
+              borderRadius: "10px",
+              marginBottom: "20px",
+            }}>
+              <button
+                type="button"
+                onClick={() => setCreateTab("form")}
+                style={{
+                  flex: 1,
+                  padding: "8px",
+                  borderRadius: "8px",
+                  fontSize: "0.88rem",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  border: "none",
+                  background: createTab === "form" ? "#8b5cf6" : "transparent",
+                  color: createTab === "form" ? "#ffffff" : "var(--text-muted)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px",
+                  transition: "all 0.2s ease",
+                }}
+              >
+                <Edit3 size={15} /> Question Form
+              </button>
+              <button
+                type="button"
+                onClick={() => setCreateTab("preview")}
+                style={{
+                  flex: 1,
+                  padding: "8px",
+                  borderRadius: "8px",
+                  fontSize: "0.88rem",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  border: "none",
+                  background: createTab === "preview" ? "#06b6d4" : "transparent",
+                  color: createTab === "preview" ? "#ffffff" : "var(--text-muted)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px",
+                  transition: "all 0.2s ease",
+                }}
+              >
+                <Eye size={15} /> Live Voter Preview
+              </button>
+            </div>
+
+            {/* Error Message */}
+            {createError && (
+              <div style={{
+                background: "rgba(239, 68, 68, 0.15)",
+                border: "1px solid rgba(239, 68, 68, 0.35)",
+                borderRadius: "10px",
+                padding: "10px 14px",
+                color: "#fca5a5",
+                fontSize: "0.85rem",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                marginBottom: "16px",
+              }}>
+                <AlertTriangle size={16} />
+                <span>{createError}</span>
+              </div>
+            )}
+
+            {createTab === "form" ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                {/* Title */}
+                <div>
+                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 700, color: "#cbd5e1", marginBottom: "6px" }}>
+                    Question Title / Text <span style={{ color: "#ef4444" }}>*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={createForm.title}
+                    onChange={(e) => setCreateForm((prev) => ({ ...prev, title: e.target.value }))}
+                    placeholder="e.g. Which web architecture standard will dominate in 2026?"
+                    className="vox-input"
+                    required
+                  />
+                </div>
+
+                {/* Description / Context */}
+                <div>
+                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 700, color: "#cbd5e1", marginBottom: "6px" }}>
+                    Description or Context (Optional)
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={createForm.description}
+                    onChange={(e) => setCreateForm((prev) => ({ ...prev, description: e.target.value }))}
+                    placeholder="Provide additional background, rules, or context for voters..."
+                    className="vox-input"
+                    style={{ resize: "vertical" }}
+                  />
+                </div>
+
+                {/* Category & Selection Type */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 700, color: "#cbd5e1", marginBottom: "6px" }}>
+                      Category
+                    </label>
+                    <select
+                      value={createForm.category}
+                      onChange={(e) => setCreateForm((prev) => ({ ...prev, category: e.target.value }))}
+                      className="vox-input"
+                    >
+                      <option value="Technology">Technology</option>
+                      <option value="Entertainment">Entertainment</option>
+                      <option value="Politics">Politics & Policy</option>
+                      <option value="Community">Community Life</option>
+                      <option value="Gaming">Gaming & Esports</option>
+                      <option value="Sports">Sports</option>
+                      <option value="Business">Business & Economics</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 700, color: "#cbd5e1", marginBottom: "6px" }}>
+                      Selection Type
+                    </label>
+                    <select
+                      value={createForm.selectionType}
+                      onChange={(e) => setCreateForm((prev) => ({ ...prev, selectionType: e.target.value }))}
+                      className="vox-input"
+                    >
+                      <option value="single">Single Choice (1 Option)</option>
+                      <option value="multiple">Multiple Choice</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Dynamic Options List */}
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                    <label style={{ fontSize: "0.85rem", fontWeight: 700, color: "#cbd5e1" }}>
+                      Multiple Choice Options (Min 2, Max 10) <span style={{ color: "#ef4444" }}>*</span>
+                    </label>
+                    <span style={{ fontSize: "0.75rem", color: "var(--text-dim)" }}>
+                      {createForm.options.length} / 10 options
+                    </span>
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    {createForm.options.map((opt, idx) => (
+                      <div key={idx} style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                        <div style={{
+                          width: "28px",
+                          height: "28px",
+                          borderRadius: "50%",
+                          background: "rgba(255, 255, 255, 0.08)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: "0.75rem",
+                          fontWeight: 700,
+                          color: "#94a3b8",
+                          flexShrink: 0,
+                        }}>
+                          {idx + 1}
+                        </div>
+                        <input
+                          type="text"
+                          value={opt}
+                          onChange={(e) => handleOptionChange(idx, e.target.value)}
+                          placeholder={`Option ${idx + 1}...`}
+                          className="vox-input"
+                          style={{ flex: 1 }}
+                        />
+                        {createForm.options.length > 2 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveOption(idx)}
+                            style={{
+                              background: "rgba(239, 68, 68, 0.12)",
+                              border: "1px solid rgba(239, 68, 68, 0.3)",
+                              color: "#f87171",
+                              width: "36px",
+                              height: "36px",
+                              borderRadius: "8px",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              cursor: "pointer",
+                            }}
+                            title="Delete Option"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {createForm.options.length < 10 && (
+                    <button
+                      type="button"
+                      onClick={handleAddOption}
+                      className="btn-vox-secondary"
+                      style={{ marginTop: "10px", padding: "6px 14px", fontSize: "0.82rem", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                    >
+                      <Plus size={14} /> Add Option
+                    </button>
+                  )}
+                </div>
+
+                {/* Timing & Timezone Controls */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 700, color: "#cbd5e1", marginBottom: "6px" }}>
+                      Voting Duration (Minutes)
+                    </label>
+                    <input
+                      type="number"
+                      min={25}
+                      max={120}
+                      value={createForm.durationMinutes}
+                      onChange={(e) => setCreateForm((prev) => ({ ...prev, durationMinutes: e.target.value }))}
+                      className="vox-input"
+                    />
+                    <div style={{ display: "flex", gap: "6px", marginTop: "6px" }}>
+                      {[30, 45, 60, 90, 120].map((d) => (
+                        <button
+                          key={d}
+                          type="button"
+                          onClick={() => setCreateForm((prev) => ({ ...prev, durationMinutes: d }))}
+                          style={{
+                            background: Number(createForm.durationMinutes) === d ? "rgba(139, 92, 246, 0.3)" : "rgba(255, 255, 255, 0.05)",
+                            border: "1px solid rgba(255, 255, 255, 0.1)",
+                            color: Number(createForm.durationMinutes) === d ? "#c084fc" : "#94a3b8",
+                            padding: "3px 8px",
+                            borderRadius: "6px",
+                            fontSize: "0.75rem",
+                            cursor: "pointer",
+                          }}
+                        >
+                          {d}m
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 700, color: "#cbd5e1", marginBottom: "6px" }}>
+                      Timezone
+                    </label>
+                    <select
+                      value={createForm.timezone}
+                      onChange={(e) => setCreateForm((prev) => ({ ...prev, timezone: e.target.value }))}
+                      className="vox-input"
+                    >
+                      <option value="UTC">UTC (Coordinated Universal Time)</option>
+                      <option value="America/New_York">America/New_York (EST/EDT)</option>
+                      <option value="America/Los_Angeles">America/Los_Angeles (PST/PDT)</option>
+                      <option value="Europe/London">Europe/London (GMT/BST)</option>
+                      <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
+                      <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Result Visibility */}
+                <div>
+                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 700, color: "#cbd5e1", marginBottom: "6px" }}>
+                    Result Visibility Policy
+                  </label>
+                  <select
+                    value={createForm.resultVisibility}
+                    onChange={(e) => setCreateForm((prev) => ({ ...prev, resultVisibility: e.target.value }))}
+                    className="vox-input"
+                  >
+                    <option value="immediate">Immediate (Real-Time Results Visible to All)</option>
+                    <option value="after_vote">Reveal Only After Voter Casts Ballot</option>
+                    <option value="after_close">Hide Results Until Voting Session Ends</option>
+                  </select>
+                </div>
+
+                {/* Modal Actions */}
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "10px", borderTop: "1px solid var(--border-subtle)", paddingTop: "18px" }}>
+                  <button
+                    type="button"
+                    className="btn-vox-secondary"
+                    onClick={() => setShowCreateModal(false)}
+                    disabled={createLoading}
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn-vox-secondary"
+                    onClick={() => handleCreatePoll("draft")}
+                    disabled={createLoading}
+                    style={{ borderColor: "rgba(148, 163, 184, 0.4)", color: "#cbd5e1" }}
+                  >
+                    Save as Draft
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn-vox-primary"
+                    onClick={() => handleCreatePoll("active")}
+                    disabled={createLoading}
+                  >
+                    {createLoading ? "Publishing..." : "Publish Immediately"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* LIVE VOTER PREVIEW MODE */
+              <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+                <div style={{
+                  background: "rgba(6, 182, 212, 0.1)",
+                  border: "1px solid rgba(6, 182, 212, 0.3)",
+                  borderRadius: "10px",
+                  padding: "10px 16px",
+                  color: "#67e8f9",
+                  fontSize: "0.85rem",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                }}>
+                  <Eye size={16} />
+                  <span>Voter Live Preview: This shows exactly how questions appear on public voter devices.</span>
+                </div>
+
+                {/* Mock Live Voter Card */}
+                <div className="glass-panel" style={{ padding: "28px", border: "1px solid rgba(139, 92, 246, 0.4)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <span className="pulse-dot-green" />
+                      <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#34d399" }}>
+                        Live Election Round
+                      </span>
+                      <span style={{
+                        background: "rgba(59, 130, 246, 0.18)",
+                        color: "#93c5fd",
+                        padding: "2px 8px",
+                        borderRadius: "9999px",
+                        fontSize: "0.75rem",
+                        fontWeight: 700,
+                      }}>
+                        {createForm.category}
+                      </span>
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: "5px", color: "var(--text-dim)", fontSize: "0.8rem" }}>
+                      <Clock size={13} />
+                      <span>{createForm.durationMinutes}m remaining</span>
+                    </div>
+                  </div>
+
+                  <h3 style={{ fontSize: "1.35rem", fontWeight: 800, color: "#ffffff", marginBottom: "8px" }}>
+                    {createForm.title || "Your question title will appear here..."}
+                  </h3>
+
+                  {createForm.description && (
+                    <p style={{ fontSize: "0.9rem", color: "#94a3b8", marginBottom: "16px", lineHeight: "1.5" }}>
+                      {createForm.description}
+                    </p>
+                  )}
+
+                  {/* Mock Options */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: "10px", margin: "20px 0" }}>
+                    {createForm.options.filter(Boolean).length === 0 ? (
+                      <div style={{ color: "var(--text-dim)", fontStyle: "italic", fontSize: "0.88rem" }}>
+                        Add options in the form to preview them here.
+                      </div>
+                    ) : (
+                      createForm.options.filter(Boolean).map((opt, idx) => (
+                        <div
+                          key={idx}
+                          className="screenshot2-option-row"
+                          style={{ padding: "14px 18px", borderRadius: "10px", cursor: "pointer" }}
+                        >
+                          <div className="screenshot2-radio-circle" />
+                          <span className="screenshot2-option-text" style={{ fontSize: "0.95rem" }}>
+                            {opt}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid var(--border-subtle)", paddingTop: "14px" }}>
+                    <span style={{ fontSize: "0.8rem", color: "var(--text-dim)", fontWeight: 700 }}>
+                      {createForm.selectionType === "single" ? "Single choice ballot" : "Multiple selections allowed"}
+                    </span>
+                    <button className="btn-vox-primary" disabled style={{ opacity: 0.7, padding: "8px 18px", fontSize: "0.85rem" }}>
+                      Submit Ballot
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", borderTop: "1px solid var(--border-subtle)", paddingTop: "16px" }}>
+                  <button
+                    type="button"
+                    className="btn-vox-secondary"
+                    onClick={() => setCreateTab("form")}
+                  >
+                    ← Back to Edit Form
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-vox-primary"
+                    onClick={() => handleCreatePoll("active")}
+                    disabled={createLoading}
+                  >
+                    {createLoading ? "Publishing..." : "Confirm & Launch"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ADMIN MODAL 2: TIMING & SCHEDULE CHANGE OPTIONS */}
+      {timingModalPoll && (
+        <div className="modal-overlay" onClick={() => !timingLoading && setTimingModalPoll(null)}>
+          <div
+            className="modal-card"
+            style={{ maxWidth: "560px" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "18px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <div style={{
+                  width: "36px",
+                  height: "36px",
+                  borderRadius: "10px",
+                  background: "linear-gradient(135deg, #0284c7, #38bdf8)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}>
+                  <Clock size={20} color="#ffffff" />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: "1.25rem", fontWeight: 800, color: "#ffffff", margin: 0 }}>
+                    Timing & Schedule Controls
+                  </h3>
+                  <p style={{ fontSize: "0.8rem", color: "var(--text-dim)", margin: 0 }}>
+                    Adjust duration, extend, or close voting sessions in real-time
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setTimingModalPoll(null)}
+                style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Target Poll Details */}
+            <div style={{
+              background: "rgba(255, 255, 255, 0.03)",
+              border: "1px solid var(--border-subtle)",
+              borderRadius: "12px",
+              padding: "14px 16px",
+              marginBottom: "18px",
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                <span style={{ fontSize: "0.8rem", color: "var(--text-dim)", fontWeight: 700 }}>SELECTED POLL</span>
+                <span style={{
+                  padding: "2px 8px",
+                  borderRadius: "9999px",
+                  fontSize: "0.72rem",
+                  fontWeight: 800,
+                  color: getTimingStatus(timingModalPoll).color,
+                  background: getTimingStatus(timingModalPoll).bg,
+                }}>
+                  {getTimingStatus(timingModalPoll).label}
+                </span>
+              </div>
+              <h4 style={{ fontSize: "1.05rem", fontWeight: 700, color: "#ffffff", margin: 0 }}>
+                {timingModalPoll.title}
+              </h4>
+            </div>
+
+            {/* Warning Alert for Active Sessions */}
+            {timingModalPoll.is_active && (
+              <div style={{
+                background: "rgba(245, 158, 11, 0.12)",
+                border: "1px solid rgba(245, 158, 11, 0.35)",
+                borderRadius: "10px",
+                padding: "10px 14px",
+                color: "#fcd34d",
+                fontSize: "0.82rem",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                marginBottom: "18px",
+              }}>
+                <AlertTriangle size={18} style={{ flexShrink: 0 }} />
+                <span>
+                  Notice: This poll is active. Adjusting duration will recalculate the live countdown for all connected voters.
+                </span>
+              </div>
+            )}
+
+            {/* Error Banner */}
+            {timingError && (
+              <div style={{
+                background: "rgba(239, 68, 68, 0.15)",
+                border: "1px solid rgba(239, 68, 68, 0.35)",
+                borderRadius: "10px",
+                padding: "10px 14px",
+                color: "#fca5a5",
+                fontSize: "0.85rem",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                marginBottom: "16px",
+              }}>
+                <AlertTriangle size={16} />
+                <span>{timingError}</span>
+              </div>
+            )}
+
+            {/* Quick Adjustment Controls */}
+            <div style={{ marginBottom: "18px" }}>
+              <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 700, color: "#cbd5e1", marginBottom: "8px" }}>
+                Quick Extend / Shorten
+              </label>
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={() => handleQuickAdjust(15)}
+                  className="btn-vox-secondary"
+                  style={{ padding: "6px 14px", fontSize: "0.82rem", color: "#34d399", borderColor: "rgba(16, 185, 129, 0.3)" }}
+                >
+                  +15 Min
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleQuickAdjust(30)}
+                  className="btn-vox-secondary"
+                  style={{ padding: "6px 14px", fontSize: "0.82rem", color: "#38bdf8", borderColor: "rgba(56, 189, 248, 0.3)" }}
+                >
+                  +30 Min
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleQuickAdjust(60)}
+                  className="btn-vox-secondary"
+                  style={{ padding: "6px 14px", fontSize: "0.82rem", color: "#c084fc", borderColor: "rgba(192, 132, 252, 0.3)" }}
+                >
+                  +1 Hour
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleQuickAdjust(-15)}
+                  className="btn-vox-secondary"
+                  style={{ padding: "6px 14px", fontSize: "0.82rem", color: "#fbbf24", borderColor: "rgba(251, 191, 36, 0.3)" }}
+                >
+                  -15 Min
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClosePollEarly}
+                  className="btn-vox-secondary"
+                  style={{ padding: "6px 14px", fontSize: "0.82rem", color: "#f87171", borderColor: "rgba(239, 68, 68, 0.4)" }}
+                >
+                  Close Voting Early
+                </button>
+              </div>
+            </div>
+
+            {/* Total Duration & Timezone */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "20px" }}>
+              <div>
+                <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 700, color: "#cbd5e1", marginBottom: "6px" }}>
+                  Total Duration (Minutes)
+                </label>
+                <input
+                  type="number"
+                  min={25}
+                  max={120}
+                  value={timingDuration}
+                  onChange={(e) => setTimingDuration(Number(e.target.value))}
+                  className="vox-input"
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 700, color: "#cbd5e1", marginBottom: "6px" }}>
+                  Timezone
+                </label>
+                <select
+                  value={timingTimezone}
+                  onChange={(e) => setTimingTimezone(e.target.value)}
+                  className="vox-input"
+                >
+                  <option value="UTC">UTC</option>
+                  <option value="America/New_York">America/New_York (EST)</option>
+                  <option value="America/Los_Angeles">America/Los_Angeles (PST)</option>
+                  <option value="Europe/London">Europe/London (GMT)</option>
+                  <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid var(--border-subtle)", paddingTop: "16px" }}>
+              <button
+                type="button"
+                className="btn-vox-secondary"
+                onClick={() => handleOpenHistoryModal(timingModalPoll)}
+                style={{ padding: "8px 14px", fontSize: "0.82rem", display: "flex", alignItems: "center", gap: "5px" }}
+              >
+                <History size={14} /> View History Log
+              </button>
+
+              <div style={{ display: "flex", gap: "10px" }}>
+                <button
+                  type="button"
+                  className="btn-vox-secondary"
+                  onClick={() => setTimingModalPoll(null)}
+                  disabled={timingLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn-vox-primary"
+                  onClick={handleSaveTiming}
+                  disabled={timingLoading}
+                >
+                  {timingLoading ? "Saving..." : "Save Schedule"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ADMIN MODAL 3: AUDIT LOG & TIMING HISTORY */}
+      {showHistoryModal && (
+        <div className="modal-overlay" onClick={() => setShowHistoryModal(null)}>
+          <div
+            className="modal-card"
+            style={{ maxWidth: "580px", maxHeight: "80vh", overflowY: "auto" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <div style={{
+                  width: "36px",
+                  height: "36px",
+                  borderRadius: "10px",
+                  background: "linear-gradient(135deg, #a855f7, #6366f1)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}>
+                  <History size={20} color="#ffffff" />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: "1.25rem", fontWeight: 800, color: "#ffffff", margin: 0 }}>
+                    Schedule Audit History
+                  </h3>
+                  <p style={{ fontSize: "0.8rem", color: "var(--text-dim)", margin: 0 }}>
+                    {showHistoryModal.title}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setShowHistoryModal(null)}
+                style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Timeline List */}
+            {logsLoading ? (
+              <div style={{ textAlign: "center", padding: "40px", color: "var(--text-muted)" }}>
+                Loading audit trail...
+              </div>
+            ) : auditLogs.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "40px", color: "var(--text-muted)" }}>
+                No modification history recorded yet for this session.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                {auditLogs.map((log, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      background: "rgba(255, 255, 255, 0.03)",
+                      border: "1px solid var(--border-subtle)",
+                      borderRadius: "10px",
+                      padding: "12px 16px",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                      <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#38bdf8" }}>
+                        {log.action || "Schedule Adjusted"}
+                      </span>
+                      <span style={{ fontSize: "0.72rem", color: "var(--text-dim)" }}>
+                        {log.created_at ? new Date(log.created_at).toLocaleString() : "Recently"}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: "0.8rem", color: "#cbd5e1" }}>
+                      {log.details || log.action}
+                    </div>
+                    {log.admin_username && (
+                      <div style={{ fontSize: "0.72rem", color: "var(--text-dim)", marginTop: "4px" }}>
+                        Modified by: {log.admin_username}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "20px", borderTop: "1px solid var(--border-subtle)", paddingTop: "14px" }}>
+              <button
+                type="button"
+                className="btn-vox-secondary"
+                onClick={() => setShowHistoryModal(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

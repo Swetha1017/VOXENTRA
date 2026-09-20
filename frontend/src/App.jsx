@@ -9,7 +9,9 @@ import { Leaderboard } from "./pages/Leaderboard";
 import { Dashboard } from "./pages/Dashboard";
 import { AdminPortal } from "./pages/AdminPortal";
 import { About } from "./pages/About";
+import { CreatePoll } from "./pages/CreatePoll";
 import { ToastContainer } from "./components/Toast";
+import { Check } from "lucide-react";
 
 const AppContent = () => {
   const { loading } = useAuth();
@@ -24,11 +26,23 @@ const AppContent = () => {
       setPollId(null);
     } else if (hash.startsWith("poll-")) {
       setRoute("poll");
-      // Extract poll ID and strip any query parameters
       const raw = hash.replace("poll-", "");
       const cleanPollId = raw.split("?")[0];
-      setPollId(cleanPollId);
-    } else if (["polls", "games", "leaderboard", "dashboard", "about", "admin", "admin-login"].includes(hash)) {
+      setPollId(cleanPollId || "active");
+    } else if (hash === "poll" || hash === "live-poll") {
+      setRoute("poll");
+      setPollId("active");
+    } else if (hash === "polls" || hash === "explore") {
+      setRoute("polls");
+      setPollId(null);
+      setTimeout(() => {
+        const el = document.getElementById("live-now-section");
+        if (el) el.scrollIntoView({ behavior: "smooth" });
+      }, 100);
+    } else if (hash === "create-poll") {
+      setRoute("create-poll");
+      setPollId(null);
+    } else if (["games", "leaderboard", "dashboard", "about", "admin", "admin-login"].includes(hash)) {
       setRoute(hash);
       setPollId(null);
     } else {
@@ -73,6 +87,7 @@ const AppContent = () => {
         {route === "home" && <Home navigate={navigate} searchQuery={searchQuery} />}
         {route === "polls" && <Home navigate={navigate} searchQuery={searchQuery} />}
         {route === "poll" && <PollView pollId={pollId} navigate={navigate} />}
+        {route === "create-poll" && <CreatePoll navigate={navigate} />}
         {route === "games" && <Games navigate={navigate} />}
         {route === "leaderboard" && <Leaderboard navigate={navigate} />}
         {route === "about" && <About navigate={navigate} />}
@@ -105,13 +120,14 @@ const AppContent = () => {
           {/* Footer Logo & Tagline */}
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
             <div style={{
-              width: "32px",
-              height: "32px",
-              borderRadius: "10px",
-              background: "linear-gradient(135deg, #06b6d4 0%, #8b5cf6 100%)",
+              width: "34px",
+              height: "34px",
+              borderRadius: "9px",
+              background: "linear-gradient(135deg, #06b6d4 0%, #8b5cf6 50%, #ec4899 100%)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
+              boxShadow: "0 0 14px rgba(139, 92, 246, 0.5)",
             }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                 <path d="M4 4L12 20L20 4H15L12 12L9 4H4Z" fill="#ffffff" />
@@ -122,7 +138,7 @@ const AppContent = () => {
                 Voxentra
               </div>
               <div style={{ fontSize: "0.75rem", color: "var(--text-dim)" }}>
-                Ideas. People. Progress.
+                💜 Your Voice Drives What's Next
               </div>
             </div>
           </div>
@@ -130,7 +146,7 @@ const AppContent = () => {
           {/* Footer Links */}
           <div style={{ display: "flex", alignItems: "center", gap: "24px", fontSize: "0.85rem", color: "var(--text-muted)" }}>
             <button onClick={() => navigate("home")} style={{ background: "none", color: "inherit" }}>Home</button>
-            <button onClick={() => navigate("polls")} style={{ background: "none", color: "inherit" }}>Live Polls</button>
+            <button onClick={() => navigate("polls")} style={{ background: "none", color: "inherit" }}>Explore</button>
             <button onClick={() => navigate("games")} style={{ background: "none", color: "inherit" }}>Games</button>
             <button onClick={() => navigate("leaderboard")} style={{ background: "none", color: "inherit" }}>Leaderboard</button>
             <button onClick={() => navigate("about")} style={{ background: "none", color: "inherit" }}>About</button>
@@ -139,7 +155,7 @@ const AppContent = () => {
 
           {/* Right Signature Note */}
           <div style={{ fontSize: "0.85rem", color: "var(--text-dim)" }}>
-            Let's Build a Smarter Tomorrow Together. 💜
+            Empowering Democratic Opinions & Live Polls 💜
           </div>
         </div>
       </footer>

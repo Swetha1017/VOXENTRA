@@ -36,37 +36,59 @@ export const PollView = ({ pollId, navigate }) => {
 
   const fetchPollAndComments = async () => {
     setLoading(true);
+    setError("");
     try {
-      const data = await api.get(`/api/polls/${pollId}`);
-      setPoll(data.poll);
-      setHasVoted(data.has_voted);
-      setVotedOptionId(data.voted_option_id);
+      const target = (!pollId || pollId === "active") ? "active" : pollId;
+      const data = await api.get(`/api/polls/${target}`);
+      const resolvedPoll = data.poll || data;
+
+      if (!resolvedPoll || !resolvedPoll.id) {
+        throw new Error("Live poll not found");
+      }
+
+      setPoll(resolvedPoll);
+      setHasVoted(Boolean(data.has_voted));
+      setVotedOptionId(data.voted_option_id || "");
       if (data.voted_option_id) {
         setSelectedOption(data.voted_option_id);
       }
-      if (data.poll?.upvotes !== undefined) {
-        setUpvotes(data.poll.upvotes);
+      if (resolvedPoll.upvotes !== undefined) {
+        setUpvotes(resolvedPoll.upvotes);
       }
-      if (data.poll?.downvotes !== undefined) {
-        setDownvotes(data.poll.downvotes);
+      if (resolvedPoll.downvotes !== undefined) {
+        setDownvotes(resolvedPoll.downvotes);
       }
-      if (data.poll?.remaining_seconds) {
-        setTimeLeft(data.poll.remaining_seconds);
+      if (resolvedPoll.remaining_seconds) {
+        setTimeLeft(resolvedPoll.remaining_seconds);
       }
 
-      const comms = await api.get(`/api/comments?target_id=${pollId}`);
-      setComments(comms || []);
+      try {
+        const comms = await api.get(`/api/comments?target_id=${resolvedPoll.id}`);
+        setComments(comms || []);
+      } catch (ce) {
+        setComments([]);
+      }
     } catch (err) {
-      setError(err.message || "Failed to load poll details");
+      // Fallback: fetch list of polls and take first available
+      try {
+        const all = await api.get("/api/polls");
+        if (all && all.length > 0) {
+          const first = all[0];
+          setPoll(first);
+          setError("");
+        } else {
+          setError(err.message || "Failed to load live poll details");
+        }
+      } catch (fallbackErr) {
+        setError(err.message || "Failed to load live poll details");
+      }
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (pollId) {
-      fetchPollAndComments();
-    }
+    fetchPollAndComments();
   }, [pollId, isAuthenticated]);
 
   // Real-time Countdown Timer
@@ -80,11 +102,12 @@ export const PollView = ({ pollId, navigate }) => {
 
   // WebSocket Live Updates
   useEffect(() => {
-    if (!pollId) return;
+    const targetPollId = poll?.id || pollId;
+    if (!targetPollId || targetPollId === "active") return;
 
     let ws;
     try {
-      ws = new WebSocket(getWSUrl(pollId));
+      ws = new WebSocket(getWSUrl(targetPollId));
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
@@ -122,7 +145,7 @@ export const PollView = ({ pollId, navigate }) => {
     return () => {
       if (ws) ws.close();
     };
-  }, [pollId]);
+  }, [poll?.id, pollId]);
 
   // Format seconds to hh:mm:ss
   const formatTime = (secs) => {
@@ -153,7 +176,8 @@ export const PollView = ({ pollId, navigate }) => {
         else setDownvotes((v) => v + 1);
       }
 
-      const res = await api.post(`/api/polls/${pollId}/reaction`, { type });
+      const targetId = poll?.id || pollId;
+      const res = await api.post(`/api/polls/${targetId}/reaction`, { type });
       if (res.upvotes !== undefined) setUpvotes(res.upvotes);
       if (res.downvotes !== undefined) setDownvotes(res.downvotes);
     } catch (e) {
@@ -182,8 +206,9 @@ export const PollView = ({ pollId, navigate }) => {
 
   // Option Ballot Submission (Supports Single & Multi-Selection)
   const handleVote = async () => {
+    const targetPollId = poll?.id || pollId;
     if (!isAuthenticated) {
-      openAuthModal("register", pollId);
+      openAuthModal("register", targetPollId);
       return;
     }
 
@@ -213,7 +238,7 @@ export const PollView = ({ pollId, navigate }) => {
         ? { option_ids: selectedOptions, referral_source: "poll_detail" }
         : { option_id: selectedOption, referral_source: "poll_detail" };
 
-      await api.post(`/api/polls/${pollId}/vote`, payload);
+      await api.post(`/api/polls/${targetPollId}/vote`, payload);
 
       setHasVoted(true);
       if (!isMulti) {

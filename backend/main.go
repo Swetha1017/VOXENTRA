@@ -72,6 +72,7 @@ func main() {
 			polls.GET("/:id", middleware.OptionalAuth(cfg.JWTSecret), pollController.GetPoll)
 			polls.POST("/:id/reaction", pollController.ReactToPoll)
 			polls.POST("/referral/:source", pollController.TrackReferral)
+			polls.POST("", middleware.AuthRequired(cfg.JWTSecret), pollController.AdminCreatePoll)
 
 			// Voting requires mandatory user authentication
 			authorizedVoting := polls.Group("")
