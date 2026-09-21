@@ -1,20 +1,117 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { api, getGlobalWSUrl } from "../api/client";
-import { 
-  Radio, Clock, Users, Zap, Award, Flame, Send, 
-  Share2, ArrowRight, CheckCircle2, MessageSquare, Play, 
-  Copy, Check, Sparkles, Trophy, Trash2, Tag, BarChart3, Plus,
-  Vote, LogOut, Home as HomeIcon, Gamepad2, LayoutDashboard, Shield
+import {
+  Radio, Gamepad2, LayoutDashboard, Trophy, Shield, Sparkles,
+  ArrowRight, Settings, Search, RotateCcw, Share2,
+  Plus, Check, CheckCircle2, LayoutGrid, List, SlidersHorizontal,
+  Flame, Vote, Info
 } from "lucide-react";
-import confetti from "canvas-confetti";
 import { ShareModal } from "../components/ShareModal";
 
-export const Home = ({ navigate: propNavigate, searchQuery }) => {
-  const routerNavigate = useNavigate();
-  const { user, isAuthenticated, isAdmin, openAuthModal, logout } = useAuth();
+/**
+ * Storage key for persisting user customized featured pages on home
+ */
+const STORAGE_KEY_FEATURED = "voxentra_home_featured_pages";
+const STORAGE_KEY_VIEW_MODE = "voxentra_home_view_mode";
 
+/**
+ * Master catalog of all destinations and features available in Voxentra
+ */
+const PLATFORM_DESTINATIONS = [
+  {
+    id: "polls",
+    path: "/voting",
+    title: "Live Polls & Voting",
+    shortTitle: "Live Polls",
+    tagline: "Small Vote. Bigger Impact.",
+    description: "Explore trending community polls, cast your vote in real time, and watch dynamic interactive outcome charts.",
+    icon: Radio,
+    theme: "cyan",
+    badgeText: "Live Active",
+    primaryActionText: "Explore Live Polls",
+    statsLabel: "Active Polls Available",
+    defaultFeatured: true,
+  },
+  {
+    id: "games",
+    path: "/games",
+    title: "Interactive Games Hub",
+    shortTitle: "Games Hub",
+    tagline: "Play, Compete & Climb.",
+    description: "Fast-paced cognitive games including Color Match & Snake Classic. Test your reflexes and earn rank points.",
+    icon: Gamepad2,
+    theme: "pink",
+    badgeText: "Live Arcade",
+    primaryActionText: "Play Arcade Games",
+    statsLabel: "Multiplayer Modes",
+    defaultFeatured: true,
+  },
+  {
+    id: "dashboard",
+    path: "/dashboard",
+    title: "Activity Dashboard",
+    shortTitle: "Dashboard",
+    tagline: "Personal Pulse & Stats.",
+    description: "Review your cast votes, point earnings, unlocked reward badges, and real-time engagement history in one place.",
+    icon: LayoutDashboard,
+    theme: "purple",
+    badgeText: "Analytics",
+    primaryActionText: "Open Dashboard",
+    statsLabel: "Personal Analytics",
+    defaultFeatured: false,
+  },
+  {
+    id: "leaderboard",
+    path: "/leaderboard",
+    title: "Global Leaderboard",
+    shortTitle: "Leaderboard",
+    tagline: "Top Platform Champions.",
+    description: "Inspect podium standings, community badges, and top-ranked contributors across live voting and games.",
+    icon: Trophy,
+    theme: "amber",
+    badgeText: "Rankings",
+    primaryActionText: "View Leaderboard",
+    statsLabel: "Top Contributors",
+    defaultFeatured: false,
+  },
+  {
+    id: "admin",
+    path: "/admin",
+    title: "Admin Portal & Poll Studio",
+    shortTitle: "Admin Portal",
+    tagline: "Clearance & Management.",
+    description: "Create official community polls, manage expiration windows, inspect system audits, and moderate comments.",
+    icon: Shield,
+    theme: "blue",
+    badgeText: "Admin Suite",
+    primaryActionText: "Open Admin Portal",
+    statsLabel: "Governance & Tools",
+    defaultFeatured: false,
+    requiresAdmin: true,
+  },
+  {
+    id: "about",
+    path: "/about",
+    title: "Platform Story & Architecture",
+    shortTitle: "About Voxentra",
+    tagline: "Mission & Tech Stack.",
+    description: "Discover the technology stack behind Voxentra, our real-time WebSocket protocol, and democratic ethos.",
+    icon: Info,
+    theme: "purple",
+    badgeText: "About Us",
+    primaryActionText: "Read About Voxentra",
+    statsLabel: "Platform Insights",
+    defaultFeatured: false,
+  },
+];
+
+export const Home = ({ navigate: propNavigate }) => {
+  const routerNavigate = useNavigate();
+  const { isAdmin } = useAuth();
+
+  // Internal unified navigation
   const navigate = (to) => {
     if (typeof to === "string") {
       if (to === "home" || to === "/") routerNavigate("/home");
@@ -26,7 +123,6 @@ export const Home = ({ navigate: propNavigate, searchQuery }) => {
       else if (to === "about") routerNavigate("/about");
       else if (to === "login") routerNavigate("/login");
       else if (to === "register") routerNavigate("/register");
-      else if (to.startsWith("poll-")) routerNavigate(`/poll/${to.replace("poll-", "")}`);
       else routerNavigate(to.startsWith("/") ? to : `/${to}`);
     } else if (propNavigate) {
       propNavigate(to);
@@ -34,50 +130,75 @@ export const Home = ({ navigate: propNavigate, searchQuery }) => {
       routerNavigate(to);
     }
   };
-  const [polls, setPolls] = useState([]);
-  const [comments, setComments] = useState([]);
-  const [leaderboard, setLeaderboard] = useState([]);
-  const [selectedOptions, setSelectedOptions] = useState({});
-  const [votedMap, setVotedMap] = useState({});
-  const [commentInput, setCommentInput] = useState("");
-  const [activeFilter, setActiveFilter] = useState("all"); // "all", "polls", "games"
-  const [sharePoll, setSharePoll] = useState(null);
-  const [copiedShare, setCopiedShare] = useState(false);
 
-  // Fetch initial data
-  const fetchData = async () => {
+  // 1. User Preference Persistence: Which 2 pages are featured on Home
+  const [featuredPageIds, setFeaturedPageIds] = useState(() => {
     try {
-      const [pollsData, commentsData, lbData] = await Promise.all([
-        api.get("/api/polls"),
-        api.get("/api/comments?target_id=global"),
-        api.get("/api/leaderboard"),
-      ]);
-
-      setPolls(pollsData || []);
-      setComments(commentsData || []);
-      setLeaderboard(lbData || []);
-
-      // If user logged in, check which polls they already voted on
-      if (isAuthenticated && pollsData) {
-        for (const p of pollsData) {
-          try {
-            const single = await api.get(`/api/polls/${p.id}`);
-            if (single.has_voted) {
-              setVotedMap((prev) => ({ ...prev, [p.id]: single.voted_option_id }));
-            }
-          } catch (e) {}
+      const saved = localStorage.getItem(STORAGE_KEY_FEATURED);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length === 2) {
+          return parsed;
         }
       }
-    } catch (err) {
-      console.warn("Error fetching homepage data:", err.message);
+    } catch {
+      // Use defaults
+    }
+    return ["polls", "games"]; // Default fixed configuration: Live Polls and Games
+  });
+
+  // 2. Presentation Format: "cards" (default), "buttons", or "list"
+  const [viewMode, setViewMode] = useState(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_VIEW_MODE);
+      if (saved && ["cards", "buttons", "list"].includes(saved)) {
+        return saved;
+      }
+    } catch {
+      // Use defaults
+    }
+    return "cards";
+  });
+
+  // Secondary destinations search filter
+  const [searchQuery, setSearchQuery] = useState("");
+  // Customization modal state
+  const [isCustomizeOpen, setIsCustomizeOpen] = useState(false);
+  const [tempSelectedIds, setTempSelectedIds] = useState(featuredPageIds);
+  // Share modal state
+  const [sharePoll, setSharePoll] = useState(null);
+  // Live stats telemetry
+  const [pollsCount, setPollsCount] = useState(0);
+  const [totalVotes, setTotalVotes] = useState(0);
+
+  // Sync viewMode changes to localStorage
+  const handleSetViewMode = (mode) => {
+    setViewMode(mode);
+    try {
+      localStorage.setItem(STORAGE_KEY_VIEW_MODE, mode);
+    } catch {
+      // Ignore storage error
     }
   };
 
+  // Fetch telemetry to enrich featured cards
   useEffect(() => {
-    fetchData();
-  }, [isAuthenticated]);
+    const fetchTelemetry = async () => {
+      try {
+        const data = await api.get("/api/polls");
+        if (Array.isArray(data)) {
+          setPollsCount(data.length);
+          const sumVotes = data.reduce((acc, p) => acc + (p.total_votes || 0), 0);
+          setTotalVotes(sumVotes);
+        }
+      } catch (err) {
+        console.warn("Home telemetry error:", err.message);
+      }
+    };
+    fetchTelemetry();
+  }, []);
 
-  // Real-time WebSocket Stream for Polls, Comments, and Games
+  // Real-time WebSocket connection for live telemetry updates
   useEffect(() => {
     let ws;
     try {
@@ -86,1116 +207,679 @@ export const Home = ({ navigate: propNavigate, searchQuery }) => {
         try {
           const msg = JSON.parse(event.data);
           if (msg.type === "poll_update") {
-            const update = msg.data;
-            setPolls((prev) =>
-              prev.map((poll) => {
-                if (poll.id === update.poll_id) {
-                  const updatedOptions = poll.options.map((opt) => {
-                    const votes = update.option_votes?.[opt.id] ?? opt.votes;
-                    const pct = update.total_votes > 0 ? (votes / update.total_votes) * 100 : 0;
-                    return {
-                      ...opt,
-                      votes,
-                      percentage: Math.round(pct * 10) / 10,
-                    };
-                  });
-                  return {
-                    ...poll,
-                    total_votes: update.total_votes,
-                    options: updatedOptions,
-                  };
-                }
-                return poll;
-              })
-            );
-          } else if (msg.type === "comment_update") {
-            const update = msg.data;
-            if (update.type === "comment_delete") {
-              setComments((prev) => prev.filter((c) => c.id !== update.comment.id));
-            } else {
-              setComments((prev) => [update.comment, ...prev.filter((c) => c.id !== update.comment.id)]);
-            }
+            setTotalVotes((prev) => prev + 1);
           }
-        } catch (e) {}
+        } catch {
+          // Ignore invalid message
+        }
       };
-    } catch (e) {}
+    } catch {
+      // WebSocket connection fallback
+    }
 
     return () => {
       if (ws) ws.close();
     };
   }, []);
 
-  // Handle Option Select
-  const handleSelectOption = (pollId, optionId) => {
-    if (votedMap[pollId]) return;
-    setSelectedOptions((prev) => ({ ...prev, [pollId]: optionId }));
+  // Filtered available destination items based on role
+  const availableDestinations = useMemo(() => {
+    return PLATFORM_DESTINATIONS.filter((dest) => !dest.requiresAdmin || isAdmin);
+  }, [isAdmin]);
+
+  // The 2 featured pages currently active
+  const featuredPages = useMemo(() => {
+    const map = new Map(availableDestinations.map((d) => [d.id, d]));
+    const list = featuredPageIds.map((id) => map.get(id)).filter(Boolean);
+    // Fallback if an id wasn't found
+    if (list.length < 2) {
+      const remaining = availableDestinations.filter((d) => !list.includes(d));
+      return [...list, ...remaining].slice(0, 2);
+    }
+    return list.slice(0, 2);
+  }, [featuredPageIds, availableDestinations]);
+
+  // Non-featured options (accessible via Secondary Access Method)
+  const secondaryDestinations = useMemo(() => {
+    const featuredSet = new Set(featuredPages.map((f) => f.id));
+    return availableDestinations.filter((dest) => !featuredSet.has(dest.id));
+  }, [featuredPages, availableDestinations]);
+
+  // Secondary destinations filtered by search input
+  const filteredSecondaryDestinations = useMemo(() => {
+    if (!searchQuery.trim()) return secondaryDestinations;
+    const query = searchQuery.toLowerCase();
+    return secondaryDestinations.filter(
+      (dest) =>
+        dest.title.toLowerCase().includes(query) ||
+        dest.description.toLowerCase().includes(query) ||
+        dest.shortTitle.toLowerCase().includes(query)
+    );
+  }, [secondaryDestinations, searchQuery]);
+
+  // Handle Customization Modal: toggle selection
+  const handleToggleSelectDestination = (id) => {
+    if (tempSelectedIds.includes(id)) {
+      if (tempSelectedIds.length > 1) {
+        setTempSelectedIds(tempSelectedIds.filter((item) => item !== id));
+      }
+    } else {
+      if (tempSelectedIds.length < 2) {
+        setTempSelectedIds([...tempSelectedIds, id]);
+      } else {
+        // Replace second item with newly selected item
+        setTempSelectedIds([tempSelectedIds[0], id]);
+      }
+    }
   };
 
-  // Submit Vote
-  const handleVote = async (poll) => {
-    if (!isAuthenticated) {
-      openAuthModal("register", poll.id);
+  // Save customized preferences to localStorage
+  const handleSaveCustomization = () => {
+    if (tempSelectedIds.length !== 2) {
+      alert("Please select exactly 2 pages to be featured on your home page.");
       return;
     }
-
-    const optionId = selectedOptions[poll.id];
-    if (!optionId) {
-      alert("Please select an option before casting your vote.");
-      return;
-    }
-
+    setFeaturedPageIds(tempSelectedIds);
     try {
-      await api.post(`/api/polls/${poll.id}/vote`, {
-        option_id: optionId,
-        referral_source: "home_page",
-      });
-
-      setVotedMap((prev) => ({ ...prev, [poll.id]: optionId }));
-      confetti({ particleCount: 50, spread: 70, origin: { y: 0.6 } });
-    } catch (err) {
-      alert(err.message || "Failed to submit vote");
+      localStorage.setItem(STORAGE_KEY_FEATURED, JSON.stringify(tempSelectedIds));
+    } catch {
+      // Ignore storage write error
     }
+    setIsCustomizeOpen(false);
   };
 
-  // Post Live Comment
-  const handlePostComment = async (e) => {
-    e.preventDefault();
-    if (!isAuthenticated) {
-      openAuthModal("register");
-      return;
-    }
-
-    if (!commentInput.trim()) return;
-
+  // Reset to default fixed configuration
+  const handleResetToDefault = () => {
+    const defaultIds = ["polls", "games"];
+    setTempSelectedIds(defaultIds);
+    setFeaturedPageIds(defaultIds);
     try {
-      const newComment = await api.post("/api/comments", {
-        target_id: "global",
-        content: commentInput.trim(),
-      });
-      setComments((prev) => [newComment, ...prev]);
-      setCommentInput("");
-    } catch (err) {
-      alert(err.message || "Failed to post comment");
+      localStorage.setItem(STORAGE_KEY_FEATURED, JSON.stringify(defaultIds));
+    } catch {
+      // Ignore storage write error
     }
+    setIsCustomizeOpen(false);
   };
-
-  // Admin Delete Comment
-  const handleDeleteComment = async (commentId) => {
-    if (!window.confirm("Admin: Remove this comment from public view?")) return;
-    try {
-      await api.delete(`/api/admin/comments/${commentId}`);
-      setComments((prev) => prev.filter((c) => c.id !== commentId));
-    } catch (err) {
-      alert(err.message);
-    }
-  };
-
-  // Copy Main Referral Share Link
-  const handleCopyMainShare = () => {
-    const link = `${window.location.origin}/#join/7xQ9`;
-    navigator.clipboard.writeText(link);
-    setCopiedShare(true);
-    setTimeout(() => setCopiedShare(false), 2000);
-  };
-
-  // Filter polls
-  const filteredPolls = polls.filter((p) => {
-    if (!searchQuery) return true;
-    return p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.category?.toLowerCase().includes(searchQuery.toLowerCase());
-  });
 
   return (
-    <div className="vox-page-container">
-      {/* 1. VOXENTRA HERO SECTION */}
-      <div className="vox-hero-section">
-        {/* Left: 💜 Your Voice Drives What's Next — Small Vote. Bigger Impact. Together. */}
-        <div style={{ flex: 1, maxWidth: "620px" }}>
-          {/* Eyebrow Tagline: 💜 Your Voice Drives What's Next */}
-          <div className="vox-hero-eyebrow">
-            <span className="vox-heart-icon">💜</span>
+    <div className="vox-home-minimal-container">
+      {/* 1. MINIMAL HERO HEADER */}
+      <div className="vox-minimal-header">
+        <div className="vox-minimal-title-wrap">
+          <div className="brand-glow-badge" style={{ marginBottom: "8px" }}>
+            <span style={{ fontSize: "0.85rem" }}>💜</span>
             <span>Your Voice Drives What's Next</span>
           </div>
 
-          <h1 className="vox-hero-title">
-            Small Vote. <br />
-            <span className="vox-gradient-text">Bigger Impact.</span> <br />
-            Together.
+          <h1 className="vox-minimal-title">
+            Small Vote. <span className="vox-gradient-text">Bigger Impact.</span>
           </h1>
 
-          <p className="vox-hero-subtitle">
-            Live polls, exciting games, real-time reactions and a community that makes every moment count.
+          <p className="vox-minimal-subtitle">
+            Welcome to Voxentra. Access our two primary real-time experiences below,
+            or browse all platform features directly.
           </p>
+        </div>
 
-          {/* Action CTAs */}
-          <div className="vox-hero-actions">
+        {/* View Mode & Customization Controls */}
+        <div className="vox-minimal-controls">
+          {/* Format Switcher: Cards | Buttons | List */}
+          <div className="vox-view-toggle-bar" title="Switch layout format for featured pages">
             <button
-              className="btn-hero-explore"
-              onClick={() => navigate("polls")}
+              onClick={() => handleSetViewMode("cards")}
+              className={`vox-view-toggle-btn ${viewMode === "cards" ? "active" : ""}`}
+              aria-label="Cards View"
             >
-              <span>Explore Polls</span>
-              <ArrowRight size={18} />
+              <LayoutGrid size={14} />
+              <span>Cards</span>
             </button>
+            <button
+              onClick={() => handleSetViewMode("buttons")}
+              className={`vox-view-toggle-btn ${viewMode === "buttons" ? "active" : ""}`}
+              aria-label="Buttons View"
+            >
+              <SlidersHorizontal size={14} />
+              <span>Buttons</span>
+            </button>
+            <button
+              onClick={() => handleSetViewMode("list")}
+              className={`vox-view-toggle-btn ${viewMode === "list" ? "active" : ""}`}
+              aria-label="List View"
+            >
+              <List size={14} />
+              <span>List</span>
+            </button>
+          </div>
 
-            {isAdmin ? (
-              <button
-                className="btn-hero-create"
-                onClick={() => navigate("admin")}
+          {/* Customize Featured Pages Button */}
+          <button
+            onClick={() => {
+              setTempSelectedIds(featuredPageIds);
+              setIsCustomizeOpen(true);
+            }}
+            className="vox-customize-btn"
+            title="Customize which two pages are featured on your home page"
+          >
+            <Settings size={14} />
+            <span>Customize (2 Pages)</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 2. PRIMARY NAVIGATION ELEMENTS: THE TWO FEATURED PAGES */}
+      {viewMode === "cards" && (
+        <div className="vox-featured-duo-grid">
+          {featuredPages.map((page) => {
+            const Icon = page.icon;
+
+            return (
+              <div
+                key={page.id}
+                className={`vox-featured-card theme-${page.theme}`}
+                onClick={() => navigate(page.path)}
+                style={{ cursor: "pointer" }}
               >
-                <span>Admin: Create Poll</span>
-                <Plus size={18} />
-              </button>
-            ) : (
+                <div>
+                  {/* Top Meta Header */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px" }}>
+                    <div className="vox-featured-icon-badge">
+                      <Icon size={30} />
+                    </div>
+                    <span
+                      style={{
+                        padding: "6px 14px",
+                        borderRadius: "9999px",
+                        fontSize: "0.78rem",
+                        fontWeight: 700,
+                        letterSpacing: "0.04em",
+                        textTransform: "uppercase",
+                        background: "rgba(255, 255, 255, 0.06)",
+                        border: "1px solid rgba(255, 255, 255, 0.12)",
+                        color: "inherit",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                      }}
+                    >
+                      <span className="pulse-dot-green" />
+                      <span>{page.badgeText}</span>
+                    </span>
+                  </div>
+
+                  {/* Title & Tagline */}
+                  <div style={{ fontSize: "0.82rem", fontWeight: 700, opacity: 0.8, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>
+                    {page.tagline}
+                  </div>
+                  <h2 className="vox-featured-card-title">{page.title}</h2>
+                  <p className="vox-featured-card-desc">{page.description}</p>
+
+                  {/* Live Stats Preview */}
+                  <div className="vox-featured-card-stats">
+                    {page.id === "polls" ? (
+                      <>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", color: "#38bdf8", fontWeight: 700 }}>
+                          <Radio size={14} />
+                          <span>{pollsCount > 0 ? `${pollsCount} Active Polls` : "Live Voting Online"}</span>
+                        </span>
+                        <span style={{ color: "var(--text-dim)" }}>•</span>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", color: "var(--text-muted)" }}>
+                          <Vote size={14} />
+                          <span>{totalVotes.toLocaleString()} Votes Cast</span>
+                        </span>
+                      </>
+                    ) : page.id === "games" ? (
+                      <>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", color: "#f472b6", fontWeight: 700 }}>
+                          <Gamepad2 size={14} />
+                          <span>Color Match & Snake</span>
+                        </span>
+                        <span style={{ color: "var(--text-dim)" }}>•</span>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", color: "var(--text-muted)" }}>
+                          <Flame size={14} color="#f59e0b" />
+                          <span>Double Points Active</span>
+                        </span>
+                      </>
+                    ) : (
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", color: "var(--text-muted)" }}>
+                        <Sparkles size={14} />
+                        <span>{page.statsLabel}</span>
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Primary Action Button */}
+                <button
+                  className="vox-featured-action-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate(page.path);
+                  }}
+                  style={{
+                    background:
+                      page.theme === "cyan"
+                        ? "linear-gradient(135deg, #0284c7 0%, #06b6d4 100%)"
+                        : page.theme === "pink"
+                        ? "linear-gradient(135deg, #db2777 0%, #ec4899 100%)"
+                        : page.theme === "purple"
+                        ? "linear-gradient(135deg, #7c3aed 0%, #8b5cf6 100%)"
+                        : "linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)",
+                    color: "#ffffff",
+                    boxShadow: "0 8px 24px rgba(0, 0, 0, 0.35)",
+                  }}
+                >
+                  <span>{page.primaryActionText}</span>
+                  <ArrowRight size={18} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* VIEW MODE 2: MEGA BUTTONS */}
+      {viewMode === "buttons" && (
+        <div className="vox-featured-duo-buttons">
+          {featuredPages.map((page) => {
+            const Icon = page.icon;
+            return (
               <button
-                className="btn-hero-create"
-                onClick={() => navigate("polls")}
-                style={{
+                key={page.id}
+                className="vox-featured-mega-btn"
+                onClick={() => navigate(page.path)}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "16px", textAlign: "left" }}>
+                  <div style={{
+                    width: "52px",
+                    height: "52px",
+                    borderRadius: "14px",
+                    background: "rgba(255, 255, 255, 0.08)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}>
+                    <Icon size={26} color="#ffffff" />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#c084fc", textTransform: "uppercase" }}>
+                      {page.badgeText}
+                    </div>
+                    <div style={{ fontSize: "1.25rem", fontWeight: 800, color: "#ffffff", marginTop: "2px" }}>
+                      {page.title}
+                    </div>
+                    <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "4px" }}>
+                      {page.description.slice(0, 75)}...
+                    </div>
+                  </div>
+                </div>
+                <div style={{
+                  width: "40px",
+                  height: "40px",
+                  borderRadius: "50%",
                   background: "rgba(255, 255, 255, 0.08)",
-                  borderColor: "rgba(255, 255, 255, 0.2)",
-                }}
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}>
+                  <ArrowRight size={18} color="#ffffff" />
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* VIEW MODE 3: STACKED LIST ITEMS */}
+      {viewMode === "list" && (
+        <div className="vox-featured-duo-list">
+          {featuredPages.map((page) => {
+            const Icon = page.icon;
+            return (
+              <div
+                key={page.id}
+                className="vox-featured-list-item"
+                onClick={() => navigate(page.path)}
               >
-                <span>Vote in Live Polls</span>
-                <Vote size={18} />
+                <div style={{ display: "flex", alignItems: "center", gap: "18px" }}>
+                  <div style={{
+                    width: "46px",
+                    height: "46px",
+                    borderRadius: "12px",
+                    background: "rgba(255, 255, 255, 0.08)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}>
+                    <Icon size={22} color="#ffffff" />
+                  </div>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <h3 style={{ fontSize: "1.12rem", fontWeight: 800, color: "#ffffff" }}>
+                        {page.title}
+                      </h3>
+                      <span style={{ fontSize: "0.72rem", padding: "2px 8px", borderRadius: "9999px", background: "rgba(139, 92, 246, 0.2)", color: "#c084fc", fontWeight: 700 }}>
+                        {page.badgeText}
+                      </span>
+                    </div>
+                    <p style={{ fontSize: "0.86rem", color: "var(--text-muted)", marginTop: "2px" }}>
+                      {page.description}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  className="btn-vox-secondary"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate(page.path);
+                  }}
+                  style={{ whiteSpace: "nowrap", padding: "8px 18px", fontSize: "0.88rem" }}
+                >
+                  <span>Launch</span>
+                  <ArrowRight size={15} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 3. SECONDARY ACCESS METHOD: ALL DESTINATIONS & ADDITIONAL FEATURES */}
+      <section className="vox-secondary-hub-section">
+        <div className="vox-secondary-hub-header">
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#a78bfa", fontSize: "0.82rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>
+              <Sparkles size={14} />
+              <span>Secondary Access Method</span>
+            </div>
+            <h2 style={{ fontSize: "1.45rem", fontWeight: 800, color: "#ffffff" }}>
+              Explore Other Destinations
+            </h2>
+            <p style={{ fontSize: "0.88rem", color: "var(--text-muted)" }}>
+              Access secondary platform features and options directly.
+            </p>
+          </div>
+
+          {/* Quick Search Bar for Instant Destination Jump */}
+          <div className="vox-secondary-search-bar">
+            <Search size={16} color="var(--text-muted)" />
+            <input
+              type="text"
+              placeholder="Search or jump to feature..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{
+                background: "none",
+                border: "none",
+                color: "#ffffff",
+                fontSize: "0.85rem",
+                width: "100%",
+              }}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: "0.8rem" }}
+              >
+                Clear
               </button>
             )}
           </div>
         </div>
 
-        {/* Right: 3D Holographic Prism V Podium Visual with 4 Floating Nodes */}
-        <div className="vox-hero-visual-container">
-          <img
-            src="/voxentra_hero_visual.png"
-            alt="Voxentra — Small Votes, Big Impact"
-            className="vox-hero-visual-image"
-          />
-        </div>
-      </div>
-
-      {/* REQUIREMENT 3: Core Home Page Navigation Deck (Home, Explore Polls, Games, Dashboard, Logout) */}
-      <div className="glass-panel" style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        flexWrap: "wrap",
-        gap: "12px",
-        padding: "16px 24px",
-        borderRadius: "18px",
-        marginBottom: "44px",
-        background: "rgba(255, 255, 255, 0.03)",
-        border: "1px solid var(--border-subtle, rgba(255, 255, 255, 0.08))",
-        boxShadow: "0 10px 30px rgba(0, 0, 0, 0.25)",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", color: "var(--text-muted, #94a3b8)", fontSize: "0.85rem", fontWeight: 700 }}>
-          <Sparkles size={16} color="#06b6d4" />
-          <span style={{ letterSpacing: "0.04em" }}>VOXENTRA ACTIONS:</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-          {/* Button 1: Home → Home page */}
-          <button
-            onClick={() => navigate("home")}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "7px",
-              padding: "9px 18px",
-              borderRadius: "11px",
-              border: "1px solid #3b82f6",
-              background: "rgba(59, 130, 246, 0.15)",
-              color: "#60a5fa",
-              fontWeight: 700,
-              fontSize: "0.88rem",
-              cursor: "pointer",
-            }}
-          >
-            <HomeIcon size={15} />
-            <span>Home</span>
-          </button>
-
-          {/* Button 2: Explore Polls → Voting page */}
-          <button
-            onClick={() => navigate("polls")}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "7px",
-              padding: "9px 18px",
-              borderRadius: "11px",
-              border: "1px solid rgba(6, 182, 212, 0.35)",
-              background: "rgba(6, 182, 212, 0.12)",
-              color: "#38bdf8",
-              fontWeight: 700,
-              fontSize: "0.88rem",
-              cursor: "pointer",
-            }}
-          >
-            <Radio size={15} />
-            <span>Explore Polls</span>
-          </button>
-
-          {/* Button 3: Games → Games page */}
-          <button
-            onClick={() => navigate("games")}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "7px",
-              padding: "9px 18px",
-              borderRadius: "11px",
-              border: "1px solid rgba(236, 72, 153, 0.35)",
-              background: "rgba(236, 72, 153, 0.12)",
-              color: "#f472b6",
-              fontWeight: 700,
-              fontSize: "0.88rem",
-              cursor: "pointer",
-            }}
-          >
-            <Gamepad2 size={15} />
-            <span>Games</span>
-          </button>
-
-          {/* Button 4: Dashboard → Dashboard page */}
-          <button
-            onClick={() => navigate("dashboard")}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "7px",
-              padding: "9px 18px",
-              borderRadius: "11px",
-              border: "1px solid rgba(139, 92, 246, 0.35)",
-              background: "rgba(139, 92, 246, 0.12)",
-              color: "#c084fc",
-              fontWeight: 700,
-              fontSize: "0.88rem",
-              cursor: "pointer",
-            }}
-          >
-            <LayoutDashboard size={15} />
-            <span>Dashboard</span>
-          </button>
-
-          {/* Button 5: Logout → Login page */}
-          <button
-            onClick={() => {
-              logout();
-              navigate("login");
-            }}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "7px",
-              padding: "9px 18px",
-              borderRadius: "11px",
-              border: "1px solid rgba(244, 63, 94, 0.35)",
-              background: "rgba(244, 63, 94, 0.12)",
-              color: "#fda4af",
-              fontWeight: 700,
-              fontSize: "0.88rem",
-              cursor: "pointer",
-            }}
-          >
-            <LogOut size={15} />
-            <span>Logout</span>
-          </button>
-        </div>
-      </div>
-
-      {/* 2. THE 3 FEATURE CARDS */}
-      <div id="voxentra-features-section" className="vox-features-grid">
-        {/* Card 1: Create a Poll [Admin] */}
-        <div className="vox-feature-card">
-          <div>
-            <div className="vox-feature-icon blue">
-              <Tag size={24} color="#ffffff" />
-            </div>
-            <div className="vox-feature-title">
-              <span>Create a Poll</span>
-              <span className="vox-admin-pill">Admin</span>
-            </div>
-            <p className="vox-feature-desc">
-              Ask questions, set options, and get started in seconds. (Admin clearance required)
-            </p>
-          </div>
-          <button
-            className="vox-round-arrow-btn"
-            title={isAdmin ? "Create a Poll in Admin Portal" : "Admin access required"}
-            onClick={() => {
-              if (isAdmin) {
-                navigate("admin");
-              } else {
-                alert("Only administrators can create or edit poll questions. Registered voters can participate and vote in all live polls!");
-                navigate("polls");
-              }
-            }}
-          >
-            <ArrowRight size={18} />
-          </button>
-        </div>
-
-        {/* Card 2: Share Anywhere */}
-        <div className="vox-feature-card">
-          <div>
-            <div className="vox-feature-icon cyan">
-              <Share2 size={24} color="#ffffff" />
-            </div>
-            <div className="vox-feature-title">
-              <span>Share Anywhere</span>
-            </div>
-            <p className="vox-feature-desc">
-              Send your poll link via URL, QR code or social media.
-            </p>
-          </div>
-          <button
-            className="vox-round-arrow-btn"
-            title="Share Poll Link & QR Code"
-            onClick={() => {
-              setSharePoll(polls[0] || { id: "active", title: "Voxentra Live Community Poll" });
-            }}
-          >
-            <ArrowRight size={18} />
-          </button>
-        </div>
-
-        {/* Card 3: See Results Live */}
-        <div className="vox-feature-card">
-          <div>
-            <div className="vox-feature-icon purple">
-              <BarChart3 size={24} color="#ffffff" />
-            </div>
-            <div className="vox-feature-title">
-              <span>See Results Live</span>
-            </div>
-            <p className="vox-feature-desc">
-              Watch votes come in in real-time, no refresh needed.
-            </p>
-          </div>
-          <button
-            className="vox-round-arrow-btn"
-            title="Open Live Results"
-            onClick={() => {
-              navigate("polls");
-            }}
-          >
-            <ArrowRight size={18} />
-          </button>
-        </div>
-      </div>
-
-      {/* 3. QUICK CATEGORIES ROW */}
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-        gap: "16px",
-        marginBottom: "56px",
-      }}>
-        <div 
-          className="glass-panel category-card" 
-          onClick={() => {
-            const el = document.getElementById("live-now-section");
-            if (el) el.scrollIntoView({ behavior: "smooth" });
-            setActiveFilter("polls");
-          }}
-        >
-          <Radio size={22} color="#06b6d4" />
-          <div>
-            <div style={{ fontWeight: 700, color: "#ffffff", fontSize: "0.95rem" }}>Live Polls</div>
-            <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: "2px" }}>Real-time voting on trending topics</div>
-          </div>
-        </div>
-
-        <div className="glass-panel category-card" onClick={() => navigate("games")}>
-          <Zap size={22} color="#ec4899" />
-          <div>
-            <div style={{ fontWeight: 700, color: "#ffffff", fontSize: "0.95rem" }}>Fun Games</div>
-            <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: "2px" }}>Play, compete and climb the ranks</div>
-          </div>
-        </div>
-
-        <div className="glass-panel category-card" onClick={() => {
-          const el = document.getElementById("live-commentary-widget");
-          if (el) el.scrollIntoView({ behavior: "smooth" });
-        }}>
-          <MessageSquare size={22} color="#8b5cf6" />
-          <div>
-            <div style={{ fontWeight: 700, color: "#ffffff", fontSize: "0.95rem" }}>Live Commentary</div>
-            <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: "2px" }}>See what others are saying live</div>
-          </div>
-        </div>
-
-        <div className="glass-panel category-card" onClick={() => navigate("leaderboard")}>
-          <Trophy size={22} color="#f59e0b" />
-          <div>
-            <div style={{ fontWeight: 700, color: "#ffffff", fontSize: "0.95rem" }}>Leaderboards</div>
-            <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: "2px" }}>Who's leading? Find out now</div>
-          </div>
-        </div>
-
-        <div className="glass-panel category-card" onClick={() => setSharePoll(polls[0] || { id: "general", title: "Voxentra" })}>
-          <Share2 size={22} color="#3b82f6" />
-          <div>
-            <div style={{ fontWeight: 700, color: "#ffffff", fontSize: "0.95rem" }}>Share & Invite</div>
-            <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: "2px" }}>Bring your friends and make it bigger</div>
-          </div>
-        </div>
-
-        {/* Quote Card */}
-        <div className="glass-panel" style={{
-          padding: "20px",
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "center",
-          background: "linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(6, 182, 212, 0.1) 100%)",
-        }}>
-          <div style={{ fontStyle: "italic", fontSize: "0.95rem", fontWeight: 700, color: "#ffffff", marginBottom: "4px" }}>
-            "Different Minds. Brighter Tomorrow."
-          </div>
-          <div className="script-accent" style={{ fontSize: "1.2rem", color: "#c084fc" }}>
-            ~ Voxentra Team
-          </div>
-        </div>
-      </div>
-
-      {/* 3. LIVE NOW SECTION */}
-      <div id="live-now-section" style={{ marginBottom: "56px" }}>
-        {/* Section Header with Tabs */}
-        <div style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          flexWrap: "wrap",
-          gap: "16px",
-          marginBottom: "24px",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <h2 style={{ fontSize: "1.8rem", fontWeight: 800, color: "#ffffff" }}>
-              Live Now
-            </h2>
-            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <span className="pulse-dot-green" />
-              <span style={{ fontSize: "0.85rem", color: "var(--text-dim)" }}>
-                Happening in real-time. Join before it ends!
-              </span>
-            </div>
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-            <button
-              onClick={() => navigate("polls")}
-              style={{ background: "none", color: "#a78bfa", fontWeight: 700, fontSize: "0.9rem", display: "flex", alignItems: "center", gap: "4px" }}
-            >
-              <span>View All</span>
-              <ArrowRight size={15} />
-            </button>
-
-            {/* Filter Pills */}
-            <div style={{
-              display: "flex",
-              background: "rgba(255, 255, 255, 0.05)",
-              padding: "4px",
-              borderRadius: "9999px",
-              border: "1px solid var(--border-subtle)",
-            }}>
-              {["all", "polls", "games"].map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveFilter(tab)}
-                  style={{
-                    padding: "4px 14px",
-                    borderRadius: "9999px",
-                    fontSize: "0.8rem",
-                    fontWeight: 700,
-                    textTransform: "capitalize",
-                    background: activeFilter === tab ? "#7c3aed" : "transparent",
-                    color: activeFilter === tab ? "#ffffff" : "var(--text-muted)",
-                    transition: "all 0.2s ease",
-                  }}
-                >
-                  {tab}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Live Grid: 2 Live Polls, 2 Live Games, 1 Live Commentary Sidebar */}
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))",
-          gap: "24px",
-        }}>
-          {/* POLL CARDS */}
-          {(activeFilter === "all" || activeFilter === "polls") && filteredPolls.slice(0, 2).map((poll) => {
-            const hasVoted = Boolean(votedMap[poll.id]);
-            const selectedOptId = selectedOptions[poll.id];
-
+        {/* Secondary Destination Cards Grid */}
+        <div className="vox-secondary-grid">
+          {filteredSecondaryDestinations.map((dest) => {
+            const Icon = dest.icon;
             return (
               <div
-                key={poll.id}
-                className="glass-panel poll-interactive-card"
-                style={{
-                  padding: "24px",
-                  display: "flex",
-                  flexDirection: "column",
-                  justifyContent: "space-between",
-                }}
+                key={dest.id}
+                className="vox-secondary-card"
+                onClick={() => navigate(dest.path)}
+                title={`Navigate to ${dest.title}`}
               >
-                <div>
-                  {/* Card Meta Header */}
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
-                    <span 
-                      className="badge-live-poll clickable"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigate(`poll-${poll.id}`);
-                      }}
-                      title="Touch or click to open live poll"
-                    >
-                      <span className="pulse-dot-green" />
-                      <span>Live Poll</span>
-                    </span>
-
-                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "12px", fontSize: "0.8rem", color: "var(--text-muted)" }}>
-                        <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                          <Clock size={14} />
-                          <span>02:34</span>
-                        </span>
-                        <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                          <Users size={14} />
-                          <span>{poll.total_votes.toLocaleString()}</span>
-                        </span>
-                      </div>
-
-                      <button
-                        className="open-live-poll-btn"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(`poll-${poll.id}`);
-                        }}
-                        title="Open full interactive live poll"
-                      >
-                        <span>Open</span>
-                        <ArrowRight size={13} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Question Title (Click to open full clean interface) */}
-                  <h3 
-                    onClick={() => navigate(`poll-${poll.id}`)}
-                    style={{
-                      fontSize: "1.18rem",
-                      fontWeight: 700,
-                      color: "#ffffff",
-                      lineHeight: 1.4,
-                      marginBottom: "16px",
-                      cursor: "pointer",
-                      transition: "color 0.2s ease",
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.color = "#38bdf8"}
-                    onMouseLeave={(e) => e.currentTarget.style.color = "#ffffff"}
-                  >
-                    {poll.title}
-                  </h3>
-
-                  {/* Poll Options matching Screenshot 2 with circular radio indicators */}
-                  <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "20px" }}>
-                    {poll.options.map((opt, idx) => {
-                      const isSelected = selectedOptId === opt.id || votedMap[poll.id] === opt.id;
-                      const showResults = Boolean(votedMap[poll.id]) || !poll.is_active;
-
-                      return (
-                        <div
-                          key={opt.id || idx}
-                          onClick={() => handleSelectOption(poll.id, opt.id)}
-                          className={`screenshot2-option-row ${isSelected ? "selected" : ""}`}
-                          style={{
-                            padding: "12px 16px",
-                            borderRadius: "10px",
-                            cursor: hasVoted ? "default" : "pointer",
-                          }}
-                        >
-                          {/* Animated Progress Fill */}
-                          {showResults && (
-                            <div
-                              className="screenshot2-option-progress"
-                              style={{ width: `${opt.percentage || 0}%` }}
-                            />
-                          )}
-
-                          {/* Circular Radio Indicator */}
-                          <div className="screenshot2-radio-circle">
-                            {isSelected && <div className="screenshot2-radio-inner-dot" />}
-                          </div>
-
-                          <span className="screenshot2-option-text" style={{ fontSize: "0.95rem" }}>
-                            {opt.text}
-                          </span>
-
-                          {showResults && (
-                            <span className="screenshot2-option-pct">
-                              {opt.percentage || 0}%
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
+                <div style={{
+                  width: "42px",
+                  height: "42px",
+                  borderRadius: "12px",
+                  background: "rgba(255, 255, 255, 0.05)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}>
+                  <Icon size={20} color="#ffffff" />
                 </div>
 
-                <div>
-                  {/* Vote Action Button */}
-                  <button
-                    disabled={hasVoted || !poll.is_active}
-                    onClick={() => handleVote(poll)}
-                    className="btn-vox-primary"
-                    style={{
-                      width: "100%",
-                      padding: "12px",
-                      background: hasVoted
-                        ? "rgba(16, 185, 129, 0.2)"
-                        : undefined,
-                      border: hasVoted ? "1px solid #10b981" : undefined,
-                      color: hasVoted ? "#34d399" : "#ffffff",
-                    }}
-                  >
-                    {hasVoted ? (
-                      <>
-                        <CheckCircle2 size={16} />
-                        <span>Voted Successfully</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>Vote Now</span>
-                        <ArrowRight size={16} />
-                      </>
-                    )}
-                  </button>
-
-                  {/* Secondary Open Live Poll Details Button */}
-                  <button
-                    onClick={() => navigate(`poll-${poll.id}`)}
-                    style={{
-                      width: "100%",
-                      padding: "9px 12px",
-                      marginTop: "8px",
-                      background: "rgba(37, 99, 235, 0.12)",
-                      border: "1px solid rgba(59, 130, 246, 0.25)",
-                      borderRadius: "10px",
-                      color: "#93c5fd",
-                      fontSize: "0.84rem",
-                      fontWeight: 700,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: "6px",
-                      cursor: "pointer",
-                      transition: "all 0.2s ease",
-                    }}
-                  >
-                    <BarChart3 size={15} />
-                    <span>Open Live Stream & Real-time Chart</span>
-                  </button>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+                    <div style={{ fontSize: "0.98rem", fontWeight: 700, color: "#ffffff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {dest.title}
+                    </div>
+                    <ArrowRight size={14} color="var(--text-dim)" />
+                  </div>
+                  <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginTop: "4px", lineHeight: 1.4 }}>
+                    {dest.description.slice(0, 68)}...
+                  </p>
                 </div>
               </div>
             );
           })}
 
-          {/* GAME CARDS */}
-          {(activeFilter === "all" || activeFilter === "games") && (
-            <>
-              {/* Game 1: Color Match */}
-              <div className="glass-panel" style={{
-                padding: "24px",
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "space-between",
-                background: "linear-gradient(180deg, rgba(24, 20, 52, 0.8) 0%, rgba(13, 16, 36, 0.9) 100%)",
-                border: "1px solid rgba(139, 92, 246, 0.3)",
-              }}>
-                <div>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
-                    <span className="badge-live-game">
-                      <span className="pulse-dot-amber" />
-                      <span>Live Game</span>
-                    </span>
-                    <span style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "4px" }}>
-                      <Users size={14} />
-                      <span>482 playing</span>
-                    </span>
-                  </div>
-
-                  <div style={{
-                    width: "56px",
-                    height: "56px",
-                    borderRadius: "16px",
-                    background: "rgba(236, 72, 153, 0.15)",
-                    border: "1px solid rgba(236, 72, 153, 0.3)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    marginBottom: "16px",
-                    boxShadow: "0 0 20px rgba(236, 72, 153, 0.3)",
-                  }}>
-                    <Sparkles size={28} color="#ec4899" />
-                  </div>
-
-                  <h3 style={{ fontSize: "1.35rem", fontWeight: 800, color: "#ffffff", marginBottom: "6px" }}>
-                    Color Match
-                  </h3>
-                  <p style={{ fontSize: "0.9rem", color: "var(--text-muted)", marginBottom: "20px" }}>
-                    Rapid cognitive speed test. Match text colors against words under 30s pressure!
-                  </p>
-                </div>
-
-                <button
-                  className="btn-vox-primary"
-                  onClick={() => navigate("games")}
-                  style={{ width: "100%", padding: "12px", background: "linear-gradient(135deg, #ec4899, #8b5cf6)" }}
-                >
-                  <span>Play Color Match</span>
-                  <ArrowRight size={16} />
-                </button>
-              </div>
-
-              {/* Game 2: Snake Classic */}
-              <div className="glass-panel" style={{
-                padding: "24px",
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "space-between",
-                background: "linear-gradient(180deg, rgba(16, 32, 54, 0.8) 0%, rgba(10, 18, 36, 0.9) 100%)",
-                border: "1px solid rgba(6, 182, 212, 0.3)",
-              }}>
-                <div>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
-                    <span className="badge-live-game">
-                      <span className="pulse-dot-amber" />
-                      <span>Live Game</span>
-                    </span>
-                    <span style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "4px" }}>
-                      <Users size={14} />
-                      <span>391 playing</span>
-                    </span>
-                  </div>
-
-                  <div style={{
-                    width: "56px",
-                    height: "56px",
-                    borderRadius: "16px",
-                    background: "rgba(6, 182, 212, 0.15)",
-                    border: "1px solid rgba(6, 182, 212, 0.3)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    marginBottom: "16px",
-                    boxShadow: "0 0 20px rgba(6, 182, 212, 0.3)",
-                    fontSize: "1.4rem",
-                  }}>
-                    🕹️
-                  </div>
-
-                  <h3 style={{ fontSize: "1.35rem", fontWeight: 800, color: "#ffffff", marginBottom: "6px" }}>
-                    Snake Classic
-                  </h3>
-                  <p style={{ fontSize: "0.9rem", color: "var(--text-muted)", marginBottom: "20px" }}>
-                    Classic arcade navigation. Collect neon dots, grow your tail, and climb the ranks!
-                  </p>
-                </div>
-
-                <button
-                  className="btn-vox-primary"
-                  onClick={() => navigate("games")}
-                  style={{
-                    width: "100%",
-                    padding: "12px",
-                    background: "linear-gradient(135deg, #06b6d4, #10b981)",
-                  }}
-                >
-                  <span>Play Snake</span>
-                  <ArrowRight size={16} />
-                </button>
-              </div>
-            </>
-          )}
-
-          {/* LIVE COMMENTARY SIDEBAR WIDGET */}
+          {/* Quick Secondary Utility: Share & Referral Modal */}
           <div
-            id="live-commentary-widget"
-            className="glass-panel"
-            style={{
-              padding: "24px",
-              display: "flex",
-              flexDirection: "column",
-              justifyContent: "space-between",
-              minHeight: "420px",
-            }}
+            className="vox-secondary-card"
+            onClick={() => setSharePoll({ id: "general", title: "Voxentra — Small Votes, Big Impact" })}
+            title="Open platform share modal"
           >
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
-                <span className="pulse-dot-green" />
-                <h3 style={{ fontSize: "1.1rem", fontWeight: 700, color: "#ffffff" }}>
-                  Live Commentary
-                </h3>
-              </div>
-
-              {/* Comments Feed List */}
-              <div className="commentary-list" style={{ maxHeight: "290px", marginBottom: "16px" }}>
-                {comments.map((c, cIdx) => (
-                  <div key={`${c.id || "comm"}-${cIdx}`} className="commentary-item">
-                    <img
-                      src={c.avatar || `https://api.dicebear.com/7.x/identicon/svg?seed=${c.username}`}
-                      alt={c.username}
-                      className="commentary-avatar"
-                    />
-                    <div className="commentary-bubble">
-                      <div className="commentary-header">
-                        <span className="commentary-username">{c.username}</span>
-                        <span className="commentary-time">10:25 AM</span>
-                        {isAdmin && (
-                          <button
-                            onClick={() => handleDeleteComment(c.id)}
-                            style={{ background: "none", color: "#fda4af", padding: "0 4px", cursor: "pointer" }}
-                            title="Admin: Delete comment"
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        )}
-                      </div>
-                      <div className="commentary-text">{c.content}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Input Form */}
-            <form onSubmit={handlePostComment} style={{ display: "flex", gap: "8px" }}>
-              <input
-                type="text"
-                placeholder={isAuthenticated ? "Type a comment..." : "Sign in to chat live..."}
-                value={commentInput}
-                onChange={(e) => setCommentInput(e.target.value)}
-                className="vox-input"
-                style={{ padding: "10px 14px", fontSize: "0.85rem" }}
-              />
-              <button
-                type="submit"
-                className="btn-vox-primary"
-                style={{ padding: "10px 16px", borderRadius: "var(--radius-md)" }}
-              >
-                <Send size={15} />
-              </button>
-            </form>
-          </div>
-        </div>
-      </div>
-
-      {/* 4. BOTTOM SECTION: Leaderboard, Share & Invite, Cosmic Banner */}
-      <div className="vox-home-bottom-grid">
-        {/* Card 1: Climb the Leaderboard */}
-        <div className="glass-panel" style={{ padding: "26px" }}>
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "16px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <Trophy size={24} color="#fbbf24" />
-              <div>
-                <h3 style={{ fontSize: "1.15rem", fontWeight: 800, color: "#ffffff" }}>
-                  Climb the Leaderboard
-                </h3>
-                <p style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
-                  Play games, answer polls and be the top contributor!
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => navigate("leaderboard")}
-              style={{ background: "none", color: "#a78bfa", fontSize: "0.8rem", fontWeight: 700, whiteSpace: "nowrap" }}
-            >
-              View Full Leaderboard &rarr;
-            </button>
-          </div>
-
-          {/* Table */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
             <div style={{
-              display: "grid",
-              gridTemplateColumns: "30px 1fr 70px 80px",
-              fontSize: "0.72rem",
-              fontWeight: 700,
-              color: "var(--text-dim)",
-              padding: "4px 8px",
-              textTransform: "uppercase",
+              width: "42px",
+              height: "42px",
+              borderRadius: "12px",
+              background: "rgba(59, 130, 246, 0.12)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
             }}>
-              <span>#</span>
-              <span>User</span>
-              <span>Points</span>
-              <span>Badges</span>
+              <Share2 size={20} color="#60a5fa" />
             </div>
-
-            {leaderboard.slice(0, 5).map((entry, idx) => (
-              <div
-                key={idx}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "30px 1fr 70px 80px",
-                  alignItems: "center",
-                  padding: "8px",
-                  borderRadius: "var(--radius-md)",
-                  background: entry.is_you ? "rgba(139, 92, 246, 0.15)" : "rgba(255, 255, 255, 0.02)",
-                  border: entry.is_you ? "1px solid rgba(139, 92, 246, 0.35)" : "1px solid transparent",
-                  fontSize: "0.85rem",
-                }}
-              >
-                <span style={{ fontWeight: 800, color: idx === 0 ? "#fbbf24" : idx === 1 ? "#94a3b8" : idx === 2 ? "#d97706" : "var(--text-dim)" }}>
-                  {idx === 0 ? "👑" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : idx + 1}
-                </span>
-
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <img
-                    src={entry.avatar}
-                    alt={entry.username}
-                    style={{ width: "24px", height: "24px", borderRadius: "50%" }}
-                  />
-                  <span style={{ fontWeight: 600, color: "#ffffff" }}>
-                    {entry.username} {entry.is_you && <span style={{ color: "#a78bfa", fontSize: "0.75rem" }}>(You)</span>}
-                  </span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+                <div style={{ fontSize: "0.98rem", fontWeight: 700, color: "#ffffff" }}>
+                  Share & Invite Friends
                 </div>
-
-                <span style={{ fontWeight: 700, color: "#e2e8f0" }}>
-                  {entry.points}
-                </span>
-
-                <div style={{ display: "flex", gap: "3px" }}>
-                  {entry.badges?.map((b, bIdx) => (
-                    <span key={bIdx} style={{ fontSize: "0.9rem" }}>{b}</span>
-                  ))}
-                </div>
+                <ArrowRight size={14} color="var(--text-dim)" />
               </div>
-            ))}
+              <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginTop: "4px", lineHeight: 1.4 }}>
+                Copy invite links or scan QR code to bring peers to Voxentra.
+              </p>
+            </div>
           </div>
-        </div>
 
-        {/* Card 2: Share & Invite Friends */}
-        <div className="glass-panel" style={{ padding: "26px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
+          {/* If user is Admin, direct Poll Creator shortcut */}
+          {isAdmin && (
+            <div
+              className="vox-secondary-card"
+              onClick={() => navigate("/create-poll")}
+              title="Quickly create a new live poll"
+              style={{
+                borderColor: "rgba(16, 185, 129, 0.3)",
+                background: "rgba(16, 185, 129, 0.05)",
+              }}
+            >
               <div style={{
-                width: "36px",
-                height: "36px",
-                borderRadius: "10px",
-                background: "rgba(59, 130, 246, 0.15)",
+                width: "42px",
+                height: "42px",
+                borderRadius: "12px",
+                background: "rgba(16, 185, 129, 0.15)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
+                flexShrink: 0,
               }}>
-                <Share2 size={18} color="#3b82f6" />
+                <Plus size={20} color="#34d399" />
               </div>
-              <h3 style={{ fontSize: "1.15rem", fontWeight: 800, color: "#ffffff" }}>
-                Share & Invite Friends
-              </h3>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+                  <div style={{ fontSize: "0.98rem", fontWeight: 700, color: "#34d399" }}>
+                    + Create New Poll
+                  </div>
+                  <ArrowRight size={14} color="#34d399" />
+                </div>
+                <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginTop: "4px", lineHeight: 1.4 }}>
+                  Launch new live community polls and questions instantly.
+                </p>
+              </div>
             </div>
-            <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginBottom: "16px" }}>
-              Make it more fun together! Share the link and invite your friends to vote and play.
-            </p>
+          )}
+        </div>
+      </section>
 
-            {/* Link Copy Bar */}
-            <div style={{ display: "flex", gap: "8px", marginBottom: "18px" }}>
-              <input
-                type="text"
-                readOnly
-                value={`${window.location.origin}/#join/7xQ9`}
-                className="vox-input"
-                style={{ fontSize: "0.8rem", background: "rgba(0, 0, 0, 0.4)", padding: "8px 12px" }}
-              />
+      {/* 4. CUSTOMIZE FEATURED PAGES MODAL (PERSISTENCE IN LOCALSTORAGE) */}
+      {isCustomizeOpen && (
+        <div className="vox-customize-modal-backdrop" onClick={() => setIsCustomizeOpen(false)}>
+          <div className="vox-customize-modal-card" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
+              <div>
+                <h3 style={{ fontSize: "1.3rem", fontWeight: 800, color: "#ffffff" }}>
+                  Customize Featured Home Pages
+                </h3>
+                <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "4px" }}>
+                  Select exactly 2 pages to be prominently featured on your Home page. Preferences persist automatically for future visits.
+                </p>
+              </div>
+            </div>
+
+            {/* Destination Selection Checklist */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px", margin: "20px 0" }}>
+              {availableDestinations.map((dest) => {
+                const Icon = dest.icon;
+                const isSelected = tempSelectedIds.includes(dest.id);
+
+                return (
+                  <div
+                    key={dest.id}
+                    onClick={() => handleToggleSelectDestination(dest.id)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "14px 18px",
+                      borderRadius: "14px",
+                      background: isSelected ? "rgba(139, 92, 246, 0.16)" : "rgba(255, 255, 255, 0.03)",
+                      border: isSelected ? "1px solid #a855f7" : "1px solid rgba(255, 255, 255, 0.08)",
+                      cursor: "pointer",
+                      transition: "all 0.2s ease",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                      <div style={{
+                        width: "36px",
+                        height: "36px",
+                        borderRadius: "10px",
+                        background: "rgba(255, 255, 255, 0.08)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}>
+                        <Icon size={18} color="#ffffff" />
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 700, color: "#ffffff", fontSize: "0.95rem" }}>
+                          {dest.title}
+                        </div>
+                        <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: "2px" }}>
+                          {dest.tagline}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{
+                      width: "24px",
+                      height: "24px",
+                      borderRadius: "6px",
+                      border: isSelected ? "1px solid #a855f7" : "1px solid var(--text-dim)",
+                      background: isSelected ? "#7c3aed" : "transparent",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}>
+                      {isSelected && <Check size={16} color="#ffffff" />}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Selection Counter Note */}
+            <div style={{
+              fontSize: "0.82rem",
+              color: tempSelectedIds.length === 2 ? "#34d399" : "#fbbf24",
+              marginBottom: "24px",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+            }}>
+              {tempSelectedIds.length === 2 ? (
+                <>
+                  <CheckCircle2 size={15} />
+                  <span>Ready: 2 of 2 featured pages selected.</span>
+                </>
+              ) : (
+                <>
+                  <Info size={15} />
+                  <span>Please choose 2 featured pages ({tempSelectedIds.length} currently selected).</span>
+                </>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
               <button
-                className="btn-vox-primary"
-                onClick={handleCopyMainShare}
-                style={{ padding: "8px 14px" }}
+                onClick={handleResetToDefault}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#94a3b8",
+                  fontSize: "0.85rem",
+                  fontWeight: 600,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  cursor: "pointer",
+                }}
               >
-                {copiedShare ? <Check size={14} /> : <Copy size={14} />}
+                <RotateCcw size={14} />
+                <span>Reset to Default (Polls + Games)</span>
               </button>
-            </div>
 
-            {/* Social Icons */}
-            <div style={{ display: "flex", justifyContent: "space-between", gap: "8px" }}>
-              {[
-                { name: "WhatsApp", color: "#25d366" },
-                { name: "Telegram", color: "#0088cc" },
-                { name: "Instagram", color: "#e1306c" },
-                { name: "X", color: "#ffffff" },
-                { name: "More", color: "#94a3b8" },
-              ].map((s) => (
+              <div style={{ display: "flex", gap: "10px" }}>
                 <button
-                  key={s.name}
-                  onClick={() => setSharePoll(polls[0] || { id: "general", title: "Voxentra" })}
-                  style={{
-                    flex: 1,
-                    padding: "8px 4px",
-                    borderRadius: "var(--radius-md)",
-                    background: "rgba(255, 255, 255, 0.04)",
-                    border: "1px solid var(--border-subtle)",
-                    color: s.color,
-                    fontSize: "0.75rem",
-                    fontWeight: 700,
-                  }}
+                  onClick={() => setIsCustomizeOpen(false)}
+                  className="btn-vox-secondary"
+                  style={{ padding: "8px 18px", fontSize: "0.9rem" }}
                 >
-                  {s.name}
+                  Cancel
                 </button>
-              ))}
+                <button
+                  onClick={handleSaveCustomization}
+                  disabled={tempSelectedIds.length !== 2}
+                  className="btn-vox-primary"
+                  style={{ padding: "8px 22px", fontSize: "0.9rem" }}
+                >
+                  Save & Persist
+                </button>
+              </div>
             </div>
           </div>
-
-          <div style={{ textAlign: "center", marginTop: "14px" }}>
-            <span className="script-accent" style={{ fontSize: "1.35rem" }}>
-              More Friends = More Fun! 😊
-            </span>
-          </div>
         </div>
+      )}
 
-        {/* Card 3: Cosmic Rocket Illustration Card */}
-        <div className="glass-panel" style={{
-          padding: "26px",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          textAlign: "center",
-          background: "radial-gradient(ellipse at 50% 30%, rgba(139, 92, 246, 0.25) 0%, rgba(9, 13, 26, 0.95) 75%)",
-          position: "relative",
-          overflow: "hidden",
-        }}>
-          {/* Animated Rocket Graphic */}
-          <div style={{
-            width: "70px",
-            height: "70px",
-            borderRadius: "50%",
-            background: "rgba(255, 255, 255, 0.05)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            marginBottom: "14px",
-            boxShadow: "0 0 30px rgba(139, 92, 246, 0.4)",
-            fontSize: "2rem",
-          }}>
-            🚀
-          </div>
-
-          <h3 style={{
-            fontSize: "1.2rem",
-            fontWeight: 800,
-            color: "#ffffff",
-            lineHeight: 1.3,
-            marginBottom: "8px",
-          }}>
-            "Curious Minds Create Brighter Tomorrows"
-          </h3>
-          <p style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
-            Empowering community discourse through real-time voting technology.
-          </p>
-        </div>
-      </div>
-
-      {/* Share Modal */}
+      {/* 5. SHARE MODAL INTEGRATION */}
       {sharePoll && (
         <ShareModal
           poll={sharePoll}
@@ -1206,3 +890,5 @@ export const Home = ({ navigate: propNavigate, searchQuery }) => {
     </div>
   );
 };
+
+export default Home;
