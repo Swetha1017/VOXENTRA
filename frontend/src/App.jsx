@@ -151,9 +151,11 @@ export function App() {
             <Route path="/home" element={<Home />} />
             <Route path="/voting" element={<VotingPage />} />
             <Route path="/polls" element={<VotingPage />} />
+            <Route path="/explore-polls" element={<VotingPage />} />
             <Route path="/poll/:id" element={<PollView />} />
             <Route path="/games" element={<Games />} />
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/user/dashboard" element={<Dashboard />} />
             <Route path="/leaderboard" element={<Leaderboard />} />
             <Route path="/about" element={<About />} />
 

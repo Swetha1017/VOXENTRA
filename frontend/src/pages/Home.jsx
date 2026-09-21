@@ -6,10 +6,12 @@ import {
   Radio, Clock, Users, Zap, Send, 
   Share2, ArrowRight, CheckCircle2, MessageSquare, 
   Copy, Check, Sparkles, Trophy, Trash2, Tag, BarChart3, Plus,
-  Vote, LogOut, Home as HomeIcon, Gamepad2, LayoutDashboard
+  Vote, LogOut, Home as HomeIcon, Gamepad2, LayoutDashboard,
+  Eye, EyeOff
 } from "lucide-react";
 import confetti from "canvas-confetti";
 import { ShareModal } from "../components/ShareModal";
+import { NavigationDeck } from "../components/NavigationDeck";
 
 export const Home = ({ navigate: propNavigate, searchQuery }) => {
   const routerNavigate = useNavigate();
@@ -43,6 +45,8 @@ export const Home = ({ navigate: propNavigate, searchQuery }) => {
   const [activeFilter, setActiveFilter] = useState("all"); // "all", "polls", "games"
   const [sharePoll, setSharePoll] = useState(null);
   const [copiedShare, setCopiedShare] = useState(false);
+  // Conditional Hiding Logic: Hide "Live Now" element from Home page by default
+  const [showLiveNow, setShowLiveNow] = useState(false);
 
   // Fetch initial data
   const fetchData = async () => {
@@ -561,8 +565,73 @@ export const Home = ({ navigate: propNavigate, searchQuery }) => {
         </div>
       </div>
 
-      {/* 3. LIVE NOW SECTION */}
-      <div id="live-now-section" style={{ marginBottom: "56px" }}>
+      {/* 3. NAVIGATION SYSTEM (3 DISTINCT PATHS: EXPLORE POLL, GAMES, DASHBOARD) */}
+      <NavigationDeck />
+
+      {/* 4. CONDITIONAL HIDING LOGIC FOR "LIVE NOW" SECTION */}
+      <div className="vox-live-now-toggle-banner">
+        <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+          <div style={{
+            width: "42px",
+            height: "42px",
+            borderRadius: "12px",
+            background: showLiveNow ? "rgba(16, 185, 129, 0.15)" : "rgba(239, 68, 68, 0.15)",
+            border: showLiveNow ? "1px solid rgba(16, 185, 129, 0.3)" : "1px solid rgba(239, 68, 68, 0.3)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}>
+            {showLiveNow ? <Eye size={20} color="#34d399" /> : <EyeOff size={20} color="#f87171" />}
+          </div>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <strong style={{ color: "#ffffff", fontSize: "1rem" }}>
+                Live Now Content Block & Feed
+              </strong>
+              <span style={{
+                fontSize: "0.72rem",
+                fontWeight: 800,
+                padding: "3px 10px",
+                borderRadius: "9999px",
+                background: showLiveNow ? "rgba(16, 185, 129, 0.2)" : "rgba(239, 68, 68, 0.2)",
+                color: showLiveNow ? "#34d399" : "#fca5a5",
+                textTransform: "uppercase",
+                letterSpacing: "0.04em",
+              }}>
+                {showLiveNow ? "Visible On Page" : "Hidden From Page"}
+              </span>
+            </div>
+            <p style={{ fontSize: "0.82rem", color: "var(--text-muted, #94a3b8)", margin: "4px 0 0 0" }}>
+              {showLiveNow
+                ? "The live polls, arcade mini-games and commentary feed are currently visible below."
+                : "The live polling cards and commentary widget are currently hidden from the home page."}
+            </p>
+          </div>
+        </div>
+
+        <button
+          onClick={() => setShowLiveNow((prev) => !prev)}
+          className="vox-live-now-toggle-btn"
+          aria-expanded={showLiveNow}
+          aria-controls="live-now-section"
+        >
+          {showLiveNow ? (
+            <>
+              <EyeOff size={16} />
+              <span>Hide Live Now Feed</span>
+            </>
+          ) : (
+            <>
+              <Eye size={16} />
+              <span>Show Live Now Feed</span>
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* 5. CONDITIONALLY RENDERED LIVE NOW SECTION */}
+      {showLiveNow && (
+        <div id="live-now-section" style={{ marginBottom: "56px" }}>
         {/* Section Header with Tabs */}
         <div style={{
           display: "flex",
@@ -996,8 +1065,9 @@ export const Home = ({ navigate: propNavigate, searchQuery }) => {
           </div>
         </div>
       </div>
+      )}
 
-      {/* 4. BOTTOM SECTION: Leaderboard, Share & Invite, Cosmic Banner */}
+      {/* 6. BOTTOM SECTION: Leaderboard, Share & Invite, Cosmic Banner */}
       <div className="vox-home-bottom-grid">
         {/* Card 1: Climb the Leaderboard */}
         <div className="glass-panel" style={{ padding: "26px" }}>
