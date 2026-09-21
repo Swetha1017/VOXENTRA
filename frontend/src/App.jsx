@@ -46,8 +46,9 @@ const AuthenticatedLayout = () => {
       {/* Modern Voxentra Footer */}
       <footer style={{
         borderTop: "1px solid var(--border-subtle, rgba(255, 255, 255, 0.08))",
-        padding: "36px 24px",
-        background: "rgba(6, 8, 18, 0.95)",
+        padding: "clamp(28px, 4vw, 40px) clamp(16px, 3.5vw, 24px)",
+        paddingBottom: "max(28px, calc(var(--sab) + 20px))",
+        background: "rgba(6, 8, 18, 0.96)",
         marginTop: "auto",
       }}>
         <div style={{
@@ -86,18 +87,18 @@ const AuthenticatedLayout = () => {
           </div>
 
           {/* Footer Quick Links */}
-          <div style={{ display: "flex", alignItems: "center", gap: "24px", fontSize: "0.85rem", color: "var(--text-muted, #94a3b8)", flexWrap: "wrap" }}>
-            <button onClick={() => navigate("/home")} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer" }}>Home</button>
-            <button onClick={() => navigate("/voting")} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer" }}>Explore Polls</button>
-            <button onClick={() => navigate("/games")} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer" }}>Games</button>
-            <button onClick={() => navigate("/dashboard")} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer" }}>Dashboard</button>
-            <button onClick={() => navigate("/leaderboard")} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer" }}>Leaderboard</button>
-            <button onClick={() => navigate("/about")} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer" }}>About</button>
-            <button onClick={() => navigate("/admin")} style={{ background: "none", border: "none", color: "var(--text-dim, #64748b)", fontSize: "0.78rem", cursor: "pointer" }}>Admin Access</button>
+          <div style={{ display: "flex", alignItems: "center", gap: "clamp(12px, 2vw, 24px)", fontSize: "0.85rem", color: "var(--text-muted, #94a3b8)", flexWrap: "wrap" }}>
+            <button onClick={() => navigate("/home")} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: "6px 2px" }}>Home</button>
+            <button onClick={() => navigate("/voting")} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: "6px 2px" }}>Explore Polls</button>
+            <button onClick={() => navigate("/games")} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: "6px 2px" }}>Games</button>
+            <button onClick={() => navigate("/dashboard")} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: "6px 2px" }}>Dashboard</button>
+            <button onClick={() => navigate("/leaderboard")} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: "6px 2px" }}>Leaderboard</button>
+            <button onClick={() => navigate("/about")} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: "6px 2px" }}>About</button>
+            <button onClick={() => navigate("/admin")} style={{ background: "none", border: "none", color: "var(--text-dim, #64748b)", fontSize: "0.78rem", cursor: "pointer", padding: "6px 2px" }}>Admin Access</button>
           </div>
 
           {/* Right Signature Note */}
-          <div style={{ fontSize: "0.85rem", color: "var(--text-dim, #64748b)" }}>
+          <div style={{ fontSize: "0.82rem", color: "var(--text-dim, #64748b)" }}>
             Empowering Democratic Opinions & Live Polls 💜
           </div>
         </div>

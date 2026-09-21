@@ -312,7 +312,7 @@ export const Games = ({ navigate }) => {
   // RENDER UI
   // ==========================================
   return (
-    <div style={{ maxWidth: "1280px", margin: "0 auto", padding: "36px 20px" }}>
+    <div className="vox-page-container">
       {/* Hero Header */}
       <div style={{ textAlign: "center", marginBottom: "32px" }}>
         <div style={{
@@ -341,7 +341,7 @@ export const Games = ({ navigate }) => {
       {/* STANDALONE GAME SELECTION CARDS - EXPLICIT CLICK REQUIRED */}
       <div style={{
         display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+        gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))",
         gap: "20px",
         marginBottom: "36px",
       }}>
@@ -475,12 +475,7 @@ export const Games = ({ navigate }) => {
       </div>
 
       {/* ACTIVE GAME PLAYGROUND + SIDEBAR (LEADERBOARD & LIVE COMMENTARY) */}
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "1fr 340px",
-        gap: "28px",
-        alignItems: "start",
-      }}>
+      <div className="vox-two-col-layout">
         {/* LEFT COLUMN: ACTIVE GAME ARENA */}
         <div>
           {/* ======================================================== */}
@@ -644,11 +639,13 @@ export const Games = ({ navigate }) => {
                 </div>
               </div>
 
-              {/* Game Board (20x20 Grid) */}
+              {/* Game Board (20x20 Grid) - Fluid Scaling */}
               <div style={{ display: "flex", justifyContent: "center", marginBottom: "20px" }}>
                 <div style={{
-                  width: "360px",
-                  height: "360px",
+                  width: "100%",
+                  maxWidth: "360px",
+                  aspectRatio: "1",
+                  height: "auto",
                   background: "rgba(5, 7, 18, 0.95)",
                   border: "2px solid rgba(6, 182, 212, 0.4)",
                   borderRadius: "14px",

@@ -360,7 +360,7 @@ export const Dashboard = ({ navigate: propNavigate }) => {
   const activePolls = polls.filter((p) => p.is_active && !p.is_archived);
 
   return (
-    <div style={{ maxWidth: "1280px", margin: "0 auto", padding: "36px 20px" }}>
+    <div className="vox-page-container">
       {/* Top Banner: User Identity & High-Level Statistics */}
       <div className="glass-panel" style={{
         padding: "32px",
@@ -459,9 +459,7 @@ export const Dashboard = ({ navigate: propNavigate }) => {
       </div>
 
       {/* DASHBOARD NAVIGATION TABS */}
-      <div style={{
-        display: "flex",
-        gap: "12px",
+      <div className="vox-scroll-pills" style={{
         marginBottom: "28px",
         borderBottom: "1px solid var(--border-subtle)",
         paddingBottom: "14px",
@@ -562,7 +560,7 @@ export const Dashboard = ({ navigate: propNavigate }) => {
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))", gap: "24px" }}>
+          <div className="vox-dashboard-grid">
             {activePolls.map((poll) => {
               const userVotedOpt = votedPolls.find((v) => v.poll_id === poll.id)?.option_id || votingSuccess[poll.id];
 
@@ -840,7 +838,7 @@ export const Dashboard = ({ navigate: propNavigate }) => {
 
       {/* SECTION 3: PARTICIPATION HISTORY & STATISTICS */}
       {activeSection === "history" && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 340px), 1fr))", gap: "24px" }}>
           {/* Voting History */}
           <div className="glass-panel" style={{ padding: "24px" }}>
             <h3 style={{ fontSize: "1.25rem", fontWeight: 800, color: "#ffffff", marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" }}>

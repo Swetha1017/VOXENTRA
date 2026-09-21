@@ -26,7 +26,7 @@ export const Leaderboard = ({ navigate }) => {
   );
 
   return (
-    <div style={{ maxWidth: "980px", margin: "0 auto", padding: "40px 24px 80px" }}>
+    <div className="vox-page-container" style={{ maxWidth: "980px" }}>
       {/* Title */}
       <div style={{ textAlign: "center", marginBottom: "36px" }}>
         <div className="brand-glow-badge" style={{ marginBottom: "12px" }}>
@@ -42,13 +42,7 @@ export const Leaderboard = ({ navigate }) => {
 
       {/* Top 3 Podium */}
       {leaderboard.length >= 3 && (
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1.15fr 1fr",
-          alignItems: "flex-end",
-          gap: "20px",
-          marginBottom: "40px",
-        }}>
+        <div className="vox-podium-grid">
           {/* #2 Silver */}
           <div className="glass-panel" style={{
             padding: "24px",
@@ -149,12 +143,8 @@ export const Leaderboard = ({ navigate }) => {
           {filtered.map((entry, idx) => (
             <div
               key={idx}
+              className="vox-leaderboard-row"
               style={{
-                display: "grid",
-                gridTemplateColumns: "50px 1fr 120px 120px",
-                alignItems: "center",
-                padding: "12px 18px",
-                borderRadius: "var(--radius-md)",
                 background: entry.is_you ? "rgba(139, 92, 246, 0.15)" : "rgba(255, 255, 255, 0.02)",
                 border: entry.is_you ? "1px solid rgba(139, 92, 246, 0.4)" : "1px solid var(--border-subtle)",
               }}

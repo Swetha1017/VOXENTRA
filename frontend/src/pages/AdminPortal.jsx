@@ -727,7 +727,7 @@ export const AdminPortal = ({ navigate: propNavigate }) => {
   // AUTHENTICATED ADMIN DASHBOARD
   // ========================================================
   return (
-    <div style={{ maxWidth: "1280px", margin: "0 auto", padding: "36px 20px" }}>
+    <div className="vox-page-container">
       {/* Admin Header */}
       <div className="glass-panel" style={{
         padding: "24px 32px",
@@ -776,14 +776,11 @@ export const AdminPortal = ({ navigate: propNavigate }) => {
         </div>
       </div>
 
-      {/* Admin Navigation Tabs - NO DEMO VIDEO ELEMENTS */}
-      <div style={{
-        display: "flex",
-        gap: "10px",
+      {/* Admin Navigation Tabs - Responsive Scroll Container */}
+      <div className="vox-scroll-pills" style={{
         marginBottom: "28px",
         borderBottom: "1px solid var(--border-subtle)",
         paddingBottom: "14px",
-        flexWrap: "wrap",
       }}>
         <button
           onClick={() => setActiveTab("pools")}
@@ -930,7 +927,7 @@ export const AdminPortal = ({ navigate: propNavigate }) => {
                   borderLeft: p.is_active ? "4px solid #10b981" : "4px solid #ef4444",
                 }}
               >
-                <div style={{ flex: 1, minWidth: "300px" }}>
+                <div style={{ flex: 1, minWidth: "min(100%, 280px)" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px", flexWrap: "wrap" }}>
                     <span style={{
                       background: p.is_active ? "rgba(16, 185, 129, 0.15)" : "rgba(239, 68, 68, 0.15)",

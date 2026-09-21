@@ -3,7 +3,7 @@ import { Shield, Zap, Database, Server, Cpu, CheckCircle } from "lucide-react";
 
 export const About = ({ navigate }) => {
   return (
-    <div style={{ maxWidth: "1000px", margin: "0 auto", padding: "40px 24px 80px" }}>
+    <div className="vox-page-container" style={{ maxWidth: "1000px" }}>
       {/* Header */}
       <div style={{ textAlign: "center", marginBottom: "48px" }}>
         <div className="brand-glow-badge" style={{ marginBottom: "14px" }}>
@@ -75,7 +75,7 @@ export const About = ({ navigate }) => {
           <Shield size={22} color="#8b5cf6" />
           <span>Vote Integrity & Tamper Prevention</span>
         </h2>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))", gap: "20px" }}>
           <div style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
             <CheckCircle size={18} color="#34d399" style={{ flexShrink: 0, marginTop: "3px" }} />
             <div>

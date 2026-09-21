@@ -55,7 +55,7 @@ export const LiveResultsChart = ({ options = [], totalVotes = 0, lastVotedOption
 
             {/* Content Container */}
             <div style={{ position: "relative", zIndex: 1 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", flexWrap: "wrap", gap: "6px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                   <span style={{
                     width: "24px",

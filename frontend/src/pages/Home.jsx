@@ -206,7 +206,7 @@ export const Home = ({ navigate: propNavigate, searchQuery }) => {
   });
 
   return (
-    <div style={{ maxWidth: "1280px", margin: "0 auto", padding: "40px 24px 80px" }}>
+    <div className="vox-page-container">
       {/* 1. VOXENTRA HERO SECTION */}
       <div className="vox-hero-section">
         {/* Left: 💜 Your Voice Drives What's Next — Small Vote. Bigger Impact. Together. */}
@@ -620,7 +620,7 @@ export const Home = ({ navigate: propNavigate, searchQuery }) => {
         {/* Live Grid: 2 Live Polls, 2 Live Games, 1 Live Commentary Sidebar */}
         <div style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))",
           gap: "24px",
         }}>
           {/* POLL CARDS */}
@@ -992,11 +992,7 @@ export const Home = ({ navigate: propNavigate, searchQuery }) => {
       </div>
 
       {/* 4. BOTTOM SECTION: Leaderboard, Share & Invite, Cosmic Banner */}
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "1.1fr 1fr 0.9fr",
-        gap: "24px",
-      }}>
+      <div className="vox-home-bottom-grid">
         {/* Card 1: Climb the Leaderboard */}
         <div className="glass-panel" style={{ padding: "26px" }}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "16px" }}>

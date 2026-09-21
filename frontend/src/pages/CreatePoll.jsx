@@ -134,8 +134,8 @@ export const CreatePoll = ({ navigate: propNavigate }) => {
   };
 
   return (
-    <div style={{ maxWidth: "640px", margin: "40px auto", padding: "0 16px" }}>
-      <div className="glass-card" style={{ padding: "36px" }}>
+    <div style={{ maxWidth: "640px", margin: "32px auto", padding: "0 clamp(16px, 3vw, 24px)" }}>
+      <div className="glass-card" style={{ padding: "clamp(20px, 4vw, 36px)" }}>
         <div style={{ marginBottom: "28px" }}>
           <h2 style={{ fontSize: "1.75rem", fontWeight: 700 }}>Create a Live Poll</h2>
           <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", marginTop: "4px" }}>

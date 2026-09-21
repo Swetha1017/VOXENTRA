@@ -269,7 +269,7 @@ export const VotingPage = () => {
   }
 
   return (
-    <div style={{ maxWidth: "1280px", margin: "0 auto", padding: "32px 24px 80px" }}>
+    <div className="vox-page-container">
       {/* Top Banner & Header */}
       <div style={{
         display: "flex",
@@ -369,7 +369,7 @@ export const VotingPage = () => {
         border: "1px solid var(--border-subtle, rgba(255, 255, 255, 0.08))",
       }}>
         {/* Category Filter Pills */}
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+        <div className="vox-scroll-pills" style={{ flex: 1 }}>
           <span style={{ fontSize: "0.85rem", color: "var(--text-dim, #64748b)", fontWeight: 600, marginRight: "4px" }}>
             Category:
           </span>
@@ -426,12 +426,7 @@ export const VotingPage = () => {
       </div>
 
       {/* Main Grid: Left = Poll Selector & Live Voting + Results, Right = Live Commentary */}
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "1fr 360px",
-        gap: "32px",
-        alignItems: "start",
-      }}>
+      <div className="vox-two-col-layout">
         {/* Left Column: Poll Switcher + Active Poll Card + Live Results */}
         <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
           {/* Poll Selection Tabs / Carousel */}
@@ -448,7 +443,7 @@ export const VotingPage = () => {
             </div>
             <div style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))",
               gap: "12px",
             }}>
               {filteredPolls.map((p) => {

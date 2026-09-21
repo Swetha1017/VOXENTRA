@@ -330,7 +330,7 @@ export const PollView = ({ pollId: propPollId, navigate: propNavigate }) => {
   }
 
   return (
-    <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "36px 24px 80px" }}>
+    <div className="vox-page-container">
       {/* Top Utility Nav: Back & Share */}
       <div style={{
         display: "flex",
@@ -370,7 +370,7 @@ export const PollView = ({ pollId: propPollId, navigate: propNavigate }) => {
       </div>
 
       {/* Main Two-Column Layout: Question Interface (Left) & Live Commentary Stream (Right) */}
-      <div style={{ display: "grid", gridTemplateColumns: "1.3fr 0.7fr", gap: "36px" }}>
+      <div className="vox-pollview-two-col">
         {/* LEFT COLUMN: Redesigned Question Voting Interface (Screenshot 2 Match) */}
         <div>
           {/* QUESTION HEADER SECTION: Clean Minimalist Layout (No "Idea" badge, No category tag) */}
@@ -756,10 +756,10 @@ export const PollView = ({ pollId: propPollId, navigate: propNavigate }) => {
 
         {/* RIGHT COLUMN: Live Commentary Stream */}
         <div className="glass-panel" style={{
-          padding: "28px",
+          padding: "clamp(18px, 3vw, 28px)",
           display: "flex",
           flexDirection: "column",
-          height: "640px",
+          height: "clamp(420px, 65vh, 640px)",
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "18px" }}>
             <span className="pulse-dot-green" />
